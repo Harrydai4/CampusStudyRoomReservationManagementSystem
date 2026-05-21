@@ -1,0 +1,3297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>校园自习室预约管理系统 - 重构版</title>
+<style>
+:root{
+  --primary:#4f6ef7;--primary-2:#6b7bff;--secondary:#6c5ce7;--success:#00b894;--warning:#f0b429;--danger:#e17055;
+  --bg:#f4f7ff;--bg-2:#ecf1ff;--card:#fff;--text:#1f2a37;--muted:#6b7280;--border:#e4ebff;
+  --radius:16px;--radius-xl:24px;
+  --shadow-1:0 6px 18px rgba(79,110,247,.08);
+  --shadow-2:0 12px 28px rgba(79,110,247,.14)
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;font-family:system-ui,-apple-system,"Microsoft YaHei",sans-serif;background:var(--bg);color:var(--text)}
+#toggle-controls{position:fixed;top:12px;right:12px;display:flex;gap:8px;z-index:9999}
+.btn-chip{
+  border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:8px 13px;font-size:12px;color:#fff;
+  background:rgba(0,0,0,.18);backdrop-filter:blur(8px);cursor:pointer;transition:.25s
+}
+.btn-chip.active{background:linear-gradient(135deg,var(--primary),var(--secondary));border-color:transparent;box-shadow:var(--shadow-1)}
+#device-frame{height:100vh;display:flex;align-items:center;justify-content:center;transition:.3s}
+#device-frame.mobile{background:linear-gradient(140deg,#5a6ee5,#7b5ce6)}
+#device-frame.desktop{background:radial-gradient(circle at 10% 10%,#f7f9ff 0,#eef2ff 45%,#e8edff 100%)}
+#app-container{position:relative;width:100%;height:100%;background:var(--bg);overflow:hidden}
+#device-frame.mobile #app-container{
+  width:390px;height:844px;border-radius:38px;border:8px solid #1b1f3b;
+  box-shadow:0 24px 60px rgba(0,0,0,.3),inset 0 0 0 2px rgba(255,255,255,.06)
+}
+#device-frame.desktop #app-container{
+  width:calc(100vw - 24px);max-width:none;height:calc(100vh - 24px);
+  border-radius:16px;box-shadow:var(--shadow-2)
+}
+.app-root{position:absolute;inset:0}
+.hidden{display:none!important}
+
+.page{display:none;height:100%;overflow:auto;background:linear-gradient(180deg,var(--bg) 0,var(--bg-2) 100%)}
+.page.active{display:block;animation:fadeIn .25s ease}
+@keyframes fadeIn{from{opacity:.5;transform:translateY(6px)}to{opacity:1;transform:none}}
+.page-header{
+  position:sticky;top:0;z-index:20;display:flex;justify-content:space-between;align-items:center;padding:14px 16px;
+  background:rgba(255,255,255,.86);backdrop-filter:blur(8px);border-bottom:1px solid var(--border)
+}
+.page-header h2{font-size:20px;letter-spacing:.2px}
+.back{
+  border:none;background:#f1f4ff;width:36px;height:36px;border-radius:12px;cursor:pointer;
+  color:#334155;font-weight:700;transition:.2s
+}
+.back:hover{transform:translateY(-1px);box-shadow:var(--shadow-1)}
+.student-content{padding:18px 16px 96px}
+.card{
+  background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow-1);
+  padding:14px;margin-bottom:12px;border:1px solid var(--border)
+}
+.section-title{font-size:16px;font-weight:800;margin:10px 0 12px;display:flex;align-items:center;gap:6px}
+.input{
+  width:100%;border:2px solid var(--border);border-radius:12px;padding:11px 12px;font-size:14px;outline:none;
+  background:#fff;transition:.2s
+}
+.input:focus{border-color:var(--primary);box-shadow:0 0 0 4px rgba(79,110,247,.12)}
+.btn{
+  border:none;border-radius:12px;padding:11px 14px;cursor:pointer;font-weight:700;
+  transition:.2s;box-shadow:var(--shadow-1)
+}
+.btn:hover{transform:translateY(-1px)}
+.btn-primary{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff}
+.btn-danger{background:linear-gradient(135deg,var(--danger),#ff8f7d);color:#fff}
+.btn-outline{background:#fff;border:2px solid var(--primary);color:var(--primary)}
+.muted{color:var(--muted);font-size:12px}
+
+#student-bottom-nav{
+  position:absolute;left:0;right:0;bottom:0;background:rgba(255,255,255,.92);
+  border-top:1px solid var(--border);display:none;z-index:40;backdrop-filter:blur(8px)
+}
+#student-bottom-nav.show{display:flex}
+.tab{
+  flex:1;border:none;background:transparent;padding:8px 4px 10px;color:#97a1b0;font-size:11px;
+  cursor:pointer;transition:.2s
+}
+.tab .tab-ico{display:block;font-size:16px;line-height:1;margin-bottom:3px}
+.tab.active{
+  color:var(--primary);font-weight:800;position:relative
+}
+.tab.active::after{
+  content:"";position:absolute;left:20%;right:20%;bottom:0;height:3px;border-radius:999px;
+  background:linear-gradient(135deg,var(--primary),var(--secondary))
+}
+
+.login-page{
+  height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:24px;
+  background:radial-gradient(circle at top left,#6b7bff 0,#5d6df2 38%,#6c5ce7 100%)
+}
+.login-card{
+  width:min(360px,100%);background:rgba(255,255,255,.95);border-radius:var(--radius-xl);padding:22px;
+  box-shadow:var(--shadow-2);border:1px solid rgba(255,255,255,.7)
+}
+.login-title{
+  font-size:26px;color:#fff;font-weight:900;margin-bottom:20px;letter-spacing:.6px;
+  text-shadow:0 4px 14px rgba(0,0,0,.25)
+}
+.field{margin-bottom:12px}
+.field label{display:block;font-size:12px;color:#57606f;margin-bottom:5px;font-weight:700}
+
+.notif-btn{
+  position:relative;border:none;background:#eef3ff;width:38px;height:38px;border-radius:12px;
+  font-size:18px;cursor:pointer;box-shadow:var(--shadow-1)
+}
+.notif-badge{
+  position:absolute;top:-4px;right:-4px;min-width:16px;height:16px;border-radius:8px;background:var(--danger);
+  color:#fff;font-size:10px;display:flex;align-items:center;justify-content:center;padding:0 4px
+}
+.hero-card{
+  padding:18px;border-radius:20px;color:#fff;background:linear-gradient(135deg,#4f6ef7 0,#6c5ce7 60%,#7f6bff 100%);
+  box-shadow:var(--shadow-2);margin-bottom:14px
+}
+.hero-title{font-size:30px;font-weight:900}
+.hero-sub{opacity:.92;margin-top:2px}
+.hero-banner{
+  background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;border-radius:14px;padding:14px;margin-bottom:12px
+}
+.hero-banner h4{font-size:14px;font-weight:800;margin-bottom:4px}
+.announce-row{display:flex;gap:10px;overflow:auto;padding-bottom:2px}
+.announce-card{
+  min-width:180px;background:#fff;border-radius:14px;border-left:4px solid #4f6ef7;padding:10px 12px;
+  border:1px solid var(--border);box-shadow:var(--shadow-1)
+}
+.announce-tag{font-size:11px;color:#4f6ef7;font-weight:800}
+.today-grid{display:grid;grid-template-columns:70px 1fr;row-gap:6px;column-gap:8px;font-size:14px}
+.today-grid .label{color:#6b7280}
+.today-grid .value{font-weight:800;text-align:right}
+.recommend-list{display:flex;flex-direction:column;gap:10px}
+.recommend-item{
+  display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--border);border-radius:14px;padding:10px 12px;box-shadow:var(--shadow-1)
+}
+.recommend-icon{
+  width:42px;height:42px;border-radius:12px;background:#eef2ff;display:flex;align-items:center;justify-content:center
+}
+.recommend-badge{
+  margin-left:auto;background:#ecfdf5;color:#059669;font-size:12px;font-weight:800;padding:5px 10px;border-radius:999px
+}
+.ann-item{
+  padding:12px;border-left:4px solid var(--primary);background:#f8faff;border-radius:12px;margin-bottom:8px;
+  box-shadow:0 2px 8px rgba(79,110,247,.06)
+}
+.quick-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.quick-item{
+  background:#fff;border:1px solid var(--border);border-radius:12px;padding:14px;
+  display:flex;flex-direction:column;align-items:center;gap:8px;box-shadow:var(--shadow-1);cursor:pointer;transition:.2s
+}
+.quick-item:hover{transform:translateY(-2px);border-color:var(--primary)}
+.quick-icon{
+  width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  font-size:20px;font-weight:700
+}
+.quick-label{font-size:13px;font-weight:700;color:#334155}
+.inline-tabs{display:flex;gap:6px;background:#eef2ff;padding:4px;border-radius:12px;overflow:auto}
+.inline-tab{
+  border:none;padding:7px 12px;border-radius:9px;background:transparent;color:#64748b;
+  font-size:12px;font-weight:700;white-space:nowrap;cursor:pointer
+}
+.inline-tab.active{background:#fff;color:var(--primary);box-shadow:var(--shadow-1)}
+.time-slots{display:flex;gap:8px;flex-wrap:wrap}
+.time-chip{
+  border:1px solid var(--border);background:#fff;color:#475569;font-size:12px;font-weight:700;
+  border-radius:999px;padding:7px 12px;cursor:pointer
+}
+.time-chip.active{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+.date-scroller{display:flex;gap:8px;overflow:auto;padding-bottom:2px}
+.date-pill{
+  min-width:72px;background:#fff;border:2px solid #edf1ff;border-radius:14px;padding:8px 6px;text-align:center;cursor:pointer
+}
+.date-pill.active{border-color:#4f6ef7;background:#eff4ff}
+.date-pill .day{font-size:28px;font-weight:900;color:#1f2937;line-height:1}
+.date-pill .meta{font-size:12px;color:#6b7280}
+.time-grid{display:grid;grid-template-columns:1fr 1fr 30px 1fr 1fr;gap:8px;align-items:end}
+.mini-label{font-size:12px;color:#64748b;font-weight:700}
+.mini-select{width:100%;border:1px solid var(--border);background:#fff;border-radius:10px;padding:9px 10px;font-weight:700}
+.seat-filters{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.filter-chip{
+  border:1px solid #e5e7eb;background:#fff;border-radius:999px;padding:7px 12px;font-size:12px;font-weight:700;color:#64748b;cursor:pointer
+}
+.filter-chip.active{background:linear-gradient(135deg,#4f6ef7,#6c5ce7);color:#fff;border-color:transparent}
+.seat.off{opacity:.35;filter:grayscale(1);cursor:not-allowed}
+.legend-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:#64748b}
+.legend-dot{width:10px;height:10px;border-radius:3px}
+.profile-menu{margin-top:10px;overflow:hidden;padding:0}
+.profile-item{
+  display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border);
+  background:#fff;cursor:pointer
+}
+.profile-item .pi-icon{
+  width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+  background:#eef2ff;color:#3730a3;font-size:15px
+}
+.profile-head{display:flex;gap:12px;align-items:center}
+.profile-avatar{
+  width:78px;height:78px;border-radius:999px;background:linear-gradient(135deg,#4f6ef7,#6c5ce7);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:38px;font-weight:900
+}
+.profile-item:last-child{border-bottom:none}
+.profile-arrow{margin-left:auto;color:#94a3b8}
+.profile-group-title{font-size:13px;color:#a0a9b8;font-weight:800;margin:12px 2px 8px}
+
+.room-row{display:flex;gap:8px}
+.seat-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-top:10px}
+#seatGrid.seat-grid{display:block}
+.seat-overview{background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px;box-shadow:var(--shadow-1);margin-top:10px}
+.seat-overview-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.seat-overview-map{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px}
+.layout-preview{
+  width:100%;height:180px;border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc;
+  display:flex;align-items:center;justify-content:center;overflow:hidden
+}
+.layout-preview img{width:100%;height:100%;object-fit:contain;background:#fff}
+.layout-placeholder{color:#64748b;font-size:13px;text-align:center;line-height:1.6;padding:0 12px}
+.seat-mini{height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800}
+.seat-mini.free{background:#ddf7ef;color:#0c9f79}
+.seat-mini.busy{background:#ffe6cc;color:#cd7d00}
+.seat-mini.sel{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff}
+.seat-sections{margin-top:10px;display:flex;flex-direction:column;gap:10px}
+.seat-section{background:#fff;border:1px solid var(--border);border-radius:14px;padding:10px;box-shadow:var(--shadow-1)}
+.seat-section-title{font-weight:800;font-size:13px;margin-bottom:8px;color:#334155}
+.seat-section-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.seat{
+  height:46px;border-radius:10px;border:none;cursor:pointer;font-size:11px;font-weight:800;
+  box-shadow:var(--shadow-1);transition:.2s
+}
+.seat:hover{transform:translateY(-1px)}
+.seat.free{background:#ddf7ef;color:#0c9f79}
+.seat.busy{background:#ffe6cc;color:#cd7d00;cursor:not-allowed}
+.seat.sel{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff}
+
+.status{display:inline-block;padding:6px 14px;border-radius:16px;font-size:12px;font-weight:800}
+.status.pending{background:#fff3db;color:#b47506}
+.status.active{background:#dcf8ee;color:#0a9a73}
+.status.away{background:#ffe3dc;color:#c5563d}
+.status.ended{background:#e9edf5;color:#707b8a}
+.timer{
+  font-size:44px;font-weight:900;text-align:center;margin:12px 0;
+  background:linear-gradient(135deg,var(--primary),var(--secondary));-webkit-background-clip:text;-webkit-text-fill-color:transparent
+}
+
+.notif-item{
+  display:flex;gap:10px;padding:12px;border-radius:14px;background:var(--card);box-shadow:var(--shadow-1);
+  margin-bottom:10px;cursor:pointer;border:1px solid var(--border)
+}
+.notif-icon{
+  width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:16px;
+  background:#eef2ff;color:#4f46e5;flex-shrink:0
+}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--primary);margin-top:6px}
+.notif-item.read .dot{visibility:hidden}
+.checkin-hint-card{background:#f8faff;border:1px solid var(--border);border-radius:12px;padding:10px;font-size:12px;color:#64748b}
+.checkin-big-actions{display:flex;gap:12px;justify-content:center}
+.checkin-info-card{background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px;box-shadow:var(--shadow-1)}
+.checkin-row{display:grid;grid-template-columns:78px 1fr;gap:6px;padding:6px 0;border-bottom:1px solid #f1f5f9}
+.checkin-row:last-child{border-bottom:none}
+.checkin-row .k{color:#6b7280}
+.checkin-row .v{text-align:right;font-weight:800;color:#1f2937}
+.round-action{
+  width:110px;height:110px;border:none;border-radius:999px;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:4px;font-weight:800;color:#fff;box-shadow:var(--shadow-2);cursor:pointer
+}
+.round-action.primary{background:linear-gradient(135deg,#2563eb,#4f46e5)}
+.round-action.warning{background:linear-gradient(135deg,#f59e0b,#d97706)}
+.round-action.danger{background:linear-gradient(135deg,#ef4444,#dc2626)}
+.qr-btn{
+  border:1px solid #e2e8f0;background:#fff;border-radius:12px;padding:10px 14px;font-weight:800;color:#334155;cursor:pointer
+}
+.qr-box{
+  width:180px;height:180px;border-radius:14px;border:1px dashed #cbd5e1;background:#fff;display:flex;align-items:center;justify-content:center;margin:10px auto
+}
+.modal-mask{
+  position:absolute;inset:0;background:rgba(15,23,42,.35);display:flex;align-items:center;justify-content:center;z-index:99998
+}
+.modal-card{
+  width:min(520px,92vw);background:#fff;border-radius:18px;padding:18px;border:1px solid #e2e8f0;box-shadow:var(--shadow-2)
+}
+.register-card{width:min(560px,94vw);max-height:90vh;overflow:auto}
+#device-frame.mobile .modal-mask{position:absolute;inset:0;padding:14px;align-items:center;justify-content:center;overflow:hidden;box-sizing:border-box}
+#device-frame.mobile #registerModal .register-card{
+  width:calc(100% - 8px);max-width:calc(100% - 8px);max-height:calc(100% - 8px);
+  margin:4px auto;border-radius:14px;overflow:auto;box-sizing:border-box
+}
+#device-frame.mobile #registerModal.modal-mask{background:rgba(244,247,255,.98)}
+.modal-title{font-size:20px;font-weight:900;margin-bottom:10px}
+.summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.summary-row{padding:10px;border-bottom:1px solid #eef2ff}
+.score-ring{
+  width:220px;height:220px;border-radius:50%;
+  background:conic-gradient(#4f6ef7 var(--p,84%), #e7ecff 0);
+  display:flex;align-items:center;justify-content:center;margin:0 auto;
+  position:relative;overflow:hidden;isolation:isolate
+}
+.score-ring::after{
+  content:"";width:164px;height:164px;border-radius:50%;background:#fff;position:absolute
+}
+.score-core{position:relative;z-index:2;text-align:center}
+.stats-three{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.stats-three .card{padding:8px;text-align:center}
+.period-tabs{display:flex;gap:8px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:6px}
+.period-tabs button{flex:1;border:none;background:transparent;border-radius:8px;padding:7px 0;font-weight:800;color:#64748b;cursor:pointer;font-size:13px}
+.period-tabs button.active{background:linear-gradient(135deg,#4f6ef7,#6c5ce7);color:#fff}
+.bars{display:flex;align-items:flex-end;gap:8px;height:140px;overflow-x:auto;padding-bottom:20px}
+.bars .b{flex:1;border-radius:8px 8px 0 0;background:#4f6ef7;position:relative}
+.bars .b span{position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:11px;color:#334155;font-weight:700}
+.bars .b i{position:absolute;bottom:-20px;left:50%;transform:translateX(-50%);font-style:normal;color:#94a3b8;font-size:11px}
+.setting-item{display:flex;align-items:center;justify-content:space-between;padding:12px;border-bottom:1px solid #eef2ff}
+.setting-item:last-child{border-bottom:none}
+.switch{width:44px;height:24px;border-radius:999px;background:#e5e7eb;position:relative;cursor:pointer}
+.switch::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:.2s}
+.switch.on{background:#4f6ef7}
+.switch.on::after{left:23px}
+
+.admin-wrap{height:100%;display:flex;flex-direction:column}
+.admin-login{
+  padding:30px;display:flex;height:100%;align-items:center;justify-content:center;
+  background:radial-gradient(circle at top,#273c82 0,#1d2c65 45%,#17224f 100%)
+}
+.admin-card{
+  width:min(400px,100%);background:#fff;border-radius:22px;padding:22px;box-shadow:var(--shadow-2)
+}
+.admin-main{padding:14px;height:100%;overflow:auto;background:linear-gradient(180deg,#f8faff 0,#edf2ff 100%)}
+.admin-shell{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px;height:100%}
+.admin-sidebar{
+  background:linear-gradient(180deg,#0f1a44,#111d4f);border-radius:14px;color:#c7d2fe;padding:14px 10px
+}
+.admin-side-title{font-size:14px;font-weight:900;color:#fff;margin-bottom:12px;padding:0 8px}
+.admin-side-item{
+  padding:10px 10px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;margin-bottom:6px
+}
+.admin-side-item.active{background:#1e3a8a;color:#fff;border-left:3px solid #60a5fa}
+.admin-cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.admin-top-tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.admin-top-tabs button{
+  border:none;border-radius:18px;padding:7px 12px;background:#eef1ff;color:#4d5b74;cursor:pointer;font-weight:700
+}
+.admin-top-tabs button.active{background:linear-gradient(135deg,var(--primary),var(--secondary));color:#fff;box-shadow:var(--shadow-1)}
+.room-item{
+  padding:12px;border-radius:14px;background:#fff;box-shadow:var(--shadow-1);margin-bottom:10px;border:1px solid var(--border);
+  display:grid;grid-template-columns:minmax(0,1fr) 210px;gap:12px;align-items:center;min-height:132px
+}
+.room-head{display:flex;justify-content:space-between;align-items:flex-start}
+.room-title-wrap{display:flex;align-items:center;gap:8px}
+.room-icon{
+  width:32px;height:32px;border-radius:9px;background:#eef2ff;color:#1d4ed8;
+  display:flex;align-items:center;justify-content:center
+}
+.room-actions{display:flex;gap:8px;margin-top:8px}
+.room-meta{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px;font-size:12px;color:#64748b}
+.room-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.room-tag{font-size:11px;padding:3px 8px;border-radius:999px;background:#eef2ff;color:#3b5bdb}
+.room-side{display:flex;flex-direction:column;justify-content:space-between;height:100%}
+.admin-table-wrap{overflow:auto;background:#fff;border-radius:14px;border:1px solid var(--border);box-shadow:var(--shadow-1)}
+.admin-table{width:100%;border-collapse:collapse;font-size:13px}
+.admin-table th,.admin-table td{padding:10px 12px;border-bottom:1px solid var(--border);text-align:left}
+.admin-table th{color:#64748b;background:#f8faff;font-weight:700}
+.status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.stats-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.stat-card{
+  background:#fff;border:1px solid var(--border);border-radius:14px;padding:12px;box-shadow:var(--shadow-1)
+}
+.stat-card .num{font-size:24px;font-weight:900;color:#334155}
+.bar-chart{display:flex;align-items:flex-end;gap:6px;height:120px}
+.bar-chart .bar{flex:1;background:linear-gradient(180deg,#93c5fd,#3b82f6);border-radius:8px 8px 0 0}
+.admin-search{margin-bottom:10px}
+.admin-search .input{height:38px}
+.admin-content{min-width:0}
+.admin-mobile-nav{display:none}
+.admin-mobile-tab{
+  border:none;border-radius:999px;padding:7px 12px;background:#eef2ff;color:#4d5b74;cursor:pointer;font-weight:700;white-space:nowrap
+}
+.admin-mobile-tab.active{background:linear-gradient(135deg,#4f6ef7,#6c5ce7);color:#fff}
+.admin-dashboard-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.admin-table-wrap{width:100%}
+.mini-badge{display:inline-block;padding:4px 8px;border-radius:999px;font-size:11px;font-weight:800}
+.mini-badge.active{background:#dcfce7;color:#059669}
+.mini-badge.pending{background:#fef3c7;color:#b45309}
+.mini-badge.done{background:#dbeafe;color:#2563eb}
+.mini-badge.cancel{background:#fee2e2;color:#b91c1c}
+.admin-head-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px}
+.admin-pager{display:flex;justify-content:center;gap:8px;margin-top:10px}
+.admin-pager button{border:none;border-radius:6px;padding:4px 10px;background:#eef2ff;color:#334155;cursor:pointer;font-weight:700}
+.admin-pager button.active{background:#4f6ef7;color:#fff}
+.stats-tabs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:6px;margin-bottom:10px}
+.stats-tabs button{border:none;background:transparent;border-radius:8px;padding:8px 10px;font-weight:800;color:#64748b;cursor:pointer}
+.stats-tabs button.active{background:linear-gradient(135deg,#4f6ef7,#6c5ce7);color:#fff}
+.pie-wrap{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.pie-chart{width:140px;height:140px;border-radius:50%;background:conic-gradient(#4f6ef7 0 36%, #00b894 36% 58%, #6c5ce7 58% 78%, #f6c453 78% 100%)}
+.pie-legend{display:flex;flex-wrap:wrap;gap:10px}
+.pie-legend span{display:inline-flex;align-items:center;gap:5px;color:#475569;font-size:12px}
+.pie-legend i{display:inline-block;width:10px;height:10px;border-radius:50%}
+.seat-map-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;margin-top:8px}
+.seat-map-grid span{border-radius:8px;padding:5px 0;text-align:center;font-size:11px;font-weight:700;background:#ddf7ef;color:#0f766e}
+.seat-map-grid span.busy{background:#e2e8f0;color:#64748b}
+.cell-config-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:8px;max-height:320px;overflow:auto;padding-right:4px}
+.cell-config-item{border:1px solid #dbe5ff;border-radius:10px;padding:8px;background:#f8fbff;min-width:0}
+.cell-config-item .muted{font-size:11px}
+.cell-toolbar{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:8px}
+.cell-toolbar.compact-leading{
+  grid-template-columns:.5fr .5fr;
+}
+.cell-toolbar.subtype-inline{
+  grid-template-columns:.8fr .9fr 2.3fr;
+  margin-top:8px;
+}
+.cell-toolbar.batch-one-line{
+  grid-template-columns:.8fr .8fr .9fr 1fr 1.5fr;
+}
+.subtype-block{font-size:13px}
+.cell-grid-btn{
+  border:1px solid #dbe5ff;border-radius:8px;padding:8px 4px;text-align:center;cursor:pointer;font-size:11px;font-weight:800;
+  background:#eefbf7;color:#0f766e
+}
+.cell-grid-btn.nonseat{background:#f3f4f6;color:#64748b}
+.cell-grid-btn.power{background:#fff4e6;color:#9a5b00}
+.cell-tags{display:flex;flex-wrap:wrap;gap:4px;justify-content:center;margin-top:4px}
+.cell-tag{font-size:10px;line-height:1;padding:2px 5px;border-radius:999px;background:rgba(79,110,247,.15);color:#334155}
+
+@media (max-width:1200px){
+  .admin-shell{grid-template-columns:200px minmax(0,1fr)}
+  .admin-dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .room-item{grid-template-columns:minmax(0,1fr)}
+}
+
+#device-frame.mobile #admin-app .admin-main{padding:8px}
+#device-frame.mobile #admin-app .admin-shell{display:block}
+#device-frame.mobile #admin-app .admin-sidebar{display:none}
+#device-frame.mobile #admin-app .admin-mobile-nav{
+  display:flex;gap:8px;overflow-x:auto;padding:8px 2px 10px 2px;margin-bottom:8px;position:sticky;top:0;background:#edf2ff;z-index:4
+}
+#device-frame.mobile #admin-app .admin-dashboard-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+#device-frame.mobile #admin-app .room-row{display:block}
+#device-frame.mobile #admin-app .room-row .field{margin-bottom:8px}
+#device-frame.mobile #admin-app .room-item{grid-template-columns:minmax(0,1fr)!important}
+#device-frame.mobile #admin-app .room-meta{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+#device-frame.mobile #admin-app .room-side{flex-direction:row;align-items:center;height:auto;gap:8px}
+#device-frame.mobile #admin-app .room-actions{margin-top:0}
+#device-frame.mobile #admin-app .cell-toolbar{grid-template-columns:1fr}
+#device-frame.mobile #admin-app .cell-toolbar.batch-one-line{grid-template-columns:1fr}
+#device-frame.mobile #admin-app .admin-head-actions{align-items:flex-start;flex-direction:column}
+#device-frame.mobile #admin-app .page-header h2{font-size:18px}
+#device-frame.mobile #admin-app .admin-search .input{height:36px}
+#device-frame.mobile #admin-app .admin-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+#device-frame.mobile #admin-app .admin-table{min-width:760px}
+#device-frame.mobile #admin-app .stats-tabs,
+#device-frame.mobile #admin-app .period-tabs{display:flex;overflow-x:auto;white-space:nowrap}
+#device-frame.mobile #admin-app .stats-tabs button,
+#device-frame.mobile #admin-app .period-tabs button{flex:0 0 auto;padding:8px 12px}
+#device-frame.mobile #admin-app .pie-wrap{justify-content:flex-start}
+#device-frame.mobile #admin-app .seat-map-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+#device-frame.mobile #admin-app .room-item{padding:10px}
+#device-frame.mobile #admin-app .admin-search{position:sticky;top:44px;z-index:3;background:#edf2ff;padding-bottom:6px}
+#device-frame.mobile #admin-app .admin-content{padding-bottom:10px}
+
+@media (max-width:640px){
+  #device-frame.mobile #admin-app .admin-dashboard-grid{grid-template-columns:1fr}
+  #device-frame.mobile #admin-app .seat-map-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+#device-frame.mobile #seatGrid .seat-overview-map{grid-template-columns:repeat(4,minmax(0,1fr))}
+#device-frame.mobile #seatGrid .seat-section-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+
+.toast-wrap{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:99999}
+.toast{
+  background:linear-gradient(135deg,#1f2937,#374151);color:#fff;padding:10px 14px;border-radius:12px;
+  font-size:13px;box-shadow:var(--shadow-2)
+}
+</style>
+</head>
+<body>
+<div class="toast-wrap hidden" id="toastWrap"><div class="toast" id="toastText"></div></div>
+<div id="checkoutModal" class="hidden modal-mask">
+  <div class="modal-card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div class="modal-title">🎉 签退成功</div>
+      <button class="back" onclick="closeCheckoutModal()">✕</button>
+    </div>
+    <div style="text-align:center;font-size:44px;margin:6px 0">🎊</div>
+    <div style="text-align:center;font-size:34px;font-weight:900;color:#1f2937">今日学习完成！</div>
+    <div class="card" style="margin-top:12px">
+      <div class="summary-row" style="display:flex;justify-content:space-between"><span>自习室</span><strong id="sumRoom"></strong></div>
+      <div class="summary-row" style="display:flex;justify-content:space-between"><span>座位号</span><strong id="sumSeat"></strong></div>
+      <div class="summary-row" style="display:flex;justify-content:space-between"><span>学习时长</span><strong id="sumDuration"></strong></div>
+      <div class="summary-row" style="display:flex;justify-content:space-between"><span>信用积分</span><strong style="color:#00b894">+5 准时签退</strong></div>
+    </div>
+    <button class="btn btn-primary" style="width:120px;float:right" onclick="closeCheckoutModal()">完成</button>
+  </div>
+</div>
+<div id="qrModal" class="hidden modal-mask">
+  <div class="modal-card" style="max-width:320px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div class="modal-title" style="font-size:18px">请向管理员出示二维码</div>
+      <button class="back" onclick="closeQrModal()">✕</button>
+    </div>
+    <div class="qr-box">
+      <img alt="签到二维码" style="width:160px;height:160px;border-radius:10px" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><rect width='180' height='180' fill='%23ffffff'/><rect x='10' y='10' width='52' height='52' fill='%23000000'/><rect x='118' y='10' width='52' height='52' fill='%23000000'/><rect x='10' y='118' width='52' height='52' fill='%23000000'/><rect x='78' y='78' width='24' height='24' fill='%23000000'/><text x='90' y='174' text-anchor='middle' font-size='12' fill='%2364748b'>签到二维码</text></svg>">
+    </div>
+    <div class="muted" style="text-align:center">二维码每分钟刷新，请勿截图保存。</div>
+  </div>
+</div>
+<div id="registerModal" class="hidden modal-mask">
+  <div class="modal-card register-card">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div class="modal-title" style="font-size:28px">📝 注册账号</div>
+      <button class="back" onclick="closeRegisterModal()">✕</button>
+    </div>
+    <div class="field"><label>学号</label><input id="regId" class="input" placeholder="请输入12位学号"></div>
+    <div class="field"><label>姓名</label><input id="regName" class="input" placeholder="请输入真实姓名"></div>
+    <div class="field"><label>性别</label><select id="regGender" class="input"><option>男</option><option>女</option></select></div>
+    <div class="field"><label>学院</label><input id="regCollege" class="input" value="计算机科学与技术学院"></div>
+    <div class="field"><label>专业</label><input id="regMajor" class="input" placeholder="请输入专业名称"></div>
+    <div class="field"><label>年级</label><select id="regGrade" class="input"><option>2026级</option><option>2025级</option><option>2024级</option></select></div>
+    <div class="field"><label>手机号</label><input id="regPhone" class="input" placeholder="请输入11位手机号"></div>
+    <div class="field"><label>邮箱</label><input id="regEmail" class="input" placeholder="请输入校园邮箱"></div>
+    <div class="field"><label>身份材料上传</label><input id="regIdentityFile" class="input" type="file" accept=".jpg,.jpeg,.png,.pdf"></div>
+    <div class="field"><label>密码</label><input id="regPwd" type="password" class="input" placeholder="6-20位，包含字母和数字"></div>
+    <div class="field"><label>确认密码</label><input id="regPwd2" type="password" class="input" placeholder="请再次输入密码"></div>
+    <button class="btn btn-primary" style="width:100%" onclick="submitRegister()">注册</button>
+    <div class="muted" style="margin-top:8px">已有账号？<a href="javascript:void(0)" onclick="closeRegisterModal()">立即登录</a></div>
+  </div>
+</div>
+<div id="genericModal" class="hidden modal-mask">
+  <div class="modal-card" id="genericModalBody"></div>
+</div>
+
+<div id="toggle-controls">
+  <button id="btnMobile" class="btn-chip active" onclick="switchDevice('mobile')">📱 手机端</button>
+  <button id="btnDesktop" class="btn-chip" onclick="switchDevice('desktop')">🖥️ 桌面端</button>
+  <button id="btnStudent" class="btn-chip active" onclick="switchRole('student')">👨‍🎓 学生端</button>
+  <button id="btnAdmin" class="btn-chip" onclick="switchRole('admin')">🔧 管理端</button>
+</div>
+
+<div id="device-frame" class="mobile">
+  <div id="app-container">
+    <div id="student-app" class="app-root">
+      <div id="page-login" class="page active">
+        <div class="login-page">
+          <div style="width:82px;height:82px;border-radius:24px;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:40px;color:#fff;margin-bottom:14px">🎓</div>
+          <div class="login-title">校园自习室预约系统</div>
+          <div style="color:rgba(255,255,255,.9);font-weight:700;margin-top:-12px;margin-bottom:18px">Campus Study Room Reservation</div>
+          <div class="login-card">
+            <div class="field"><label>学号</label><input id="loginId" class="input" value="202301010101"></div>
+            <div class="field"><label>密码</label><input id="loginPwd" type="password" class="input" value="123456"></div>
+            <button class="btn btn-primary" style="width:100%" onclick="handleStudentLogin()">登录</button>
+            <div style="display:flex;justify-content:space-between;margin-top:10px;font-weight:700">
+              <a href="javascript:void(0)" onclick="App.util.toast('请联系管理员重置密码')">忘记密码？</a>
+              <a href="javascript:void(0)" onclick="showRegisterModal()">注册账号 →</a>
+            </div>
+            <button class="btn btn-outline" style="width:100%;margin-top:12px" onclick="switchRole('admin')">🔧 切换管理员登录</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="page-home" class="page">
+        <div class="page-header"><h2>首页</h2><button class="notif-btn" onclick="openNotifications()">🔔<span id="notifBadge" class="notif-badge">0</span></button></div>
+        <div class="student-content">
+          <div class="hero-card"><div class="hero-title" id="welcomeText">你好，同学</div><p class="hero-sub" id="todayText"></p></div>
+          <div class="section-title">📣 公告通知</div>
+          <div id="announcementList"></div>
+          <div class="section-title">📅 今日预约</div>
+          <div id="todayReservation" class="card"></div>
+          <div class="section-title">🏠 推荐自习室</div>
+          <div id="homeQuickEntry"></div>
+          <div id="homeBanner"></div>
+        </div>
+      </div>
+
+      <div id="page-reservation" class="page">
+        <div class="page-header"><button class="back" onclick="goBack('home')">←</button><h2>座位预约</h2><div></div></div>
+        <div class="student-content">
+          <div id="datePickerPanel"></div>
+          <div class="section-title">📅 预约配置</div>
+          <div class="card">
+            <div class="field"><label>自习室</label><select id="roomSelect" class="input" onchange="renderSeats()"></select></div>
+            <div class="field"><label>快捷时段</label>
+              <div class="time-slots">
+                <button class="time-chip" onclick="setQuickTime('08:00','10:00')">08:00-10:00</button>
+                <button class="time-chip" onclick="setQuickTime('10:00','12:00')">10:00-12:00</button>
+                <button class="time-chip" onclick="setQuickTime('14:00','16:00')">14:00-16:00</button>
+                <button class="time-chip" onclick="setQuickTime('19:00','21:00')">19:00-21:00</button>
+              </div>
+            </div>
+            <div class="room-row">
+              <div class="field" style="flex:1"><label>开始</label><input id="startTime" class="input" value="09:00"></div>
+              <div class="field" style="flex:1"><label>结束</label><input id="endTime" class="input" value="11:00"></div>
+            </div>
+            <div class="legend-row">
+              <div class="legend-item"><span class="legend-dot" style="background:#ddf7ef"></span>可选</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#ffe6cc"></span>不可用</div>
+              <div class="legend-item"><span class="legend-dot" style="background:#5f73fb"></span>已选</div>
+            </div>
+            <div class="seat-filters">
+              <button class="filter-chip active" data-seat-filter="all" onclick="toggleSeatFilter('all')">全部</button>
+              <button class="filter-chip" data-seat-filter="power" onclick="toggleSeatFilter('power')">⚡ 有电源</button>
+              <button class="filter-chip" data-seat-filter="window" onclick="toggleSeatFilter('window')">🪟 靠窗</button>
+              <button class="filter-chip" data-seat-filter="quiet" onclick="toggleSeatFilter('quiet')">🔇 静音区</button>
+              <button class="filter-chip" data-seat-filter="hot" onclick="toggleSeatFilter('hot')">🔥 热门</button>
+            </div>
+          </div>
+          <div class="seat-grid" id="seatGrid"></div>
+        </div>
+      </div>
+
+      <div id="page-checkin" class="page">
+        <div class="page-header"><button class="back" onclick="goBack('home')">←</button><h2>签到签退</h2><div></div></div>
+        <div class="student-content">
+          <div class="card" style="text-align:center">
+            <span id="checkinStatus" class="status pending">待签到</span>
+            <div class="timer" id="studyTimer">00:00:00</div>
+            <div id="awayHint" class="muted"></div>
+          </div>
+          <div id="checkinInfoCard"></div>
+          <div id="checkinActions" class="card"></div>
+        </div>
+      </div>
+
+      <div id="page-notifications" class="page">
+        <div class="page-header"><button class="back" onclick="goBack('home')">←</button><h2>消息通知</h2><button class="btn btn-outline" style="padding:6px 10px" onclick="markAllRead()">全部已读</button></div>
+        <div class="student-content" id="notificationList"></div>
+      </div>
+
+      <div id="page-profile" class="page">
+        <div class="page-header"><button class="back" onclick="goBack('home')">←</button><h2>我的</h2><div></div></div>
+        <div class="student-content" id="profileContent"></div>
+      </div>
+
+      <div id="page-myres" class="page">
+        <div class="page-header"><button class="back" onclick="goBack('profile')">←</button><h2>我的预约</h2><div></div></div>
+        <div class="student-content" id="myReservationList"></div>
+      </div>
+      <div id="page-credit" class="page">
+        <div class="page-header"><button class="back" onclick="goBack('profile')">←</button><h2>信用积分</h2><div></div></div>
+        <div class="student-content" id="creditContent"></div>
+      </div>
+      <div id="page-stats" class="page">
+        <div class="page-header"><button class="back" onclick="goBack('profile')">←</button><h2>学习统计</h2><div></div></div>
+        <div class="student-content" id="statsContent"></div>
+      </div>
+      <div id="page-settings" class="page">
+        <div class="page-header"><button class="back" onclick="goBack('profile')">←</button><h2>设置</h2><div></div></div>
+        <div class="student-content" id="settingsContent"></div>
+      </div>
+
+      <div id="student-bottom-nav">
+        <button class="tab active" data-tab="home" data-route="home" onclick="studentTab('home')"><span class="tab-ico">🏠</span>首页</button>
+        <button class="tab" data-tab="reservation" data-route="reservation" onclick="studentTab('reservation')"><span class="tab-ico">🪑</span>预约</button>
+        <button class="tab" data-tab="checkin" data-route="checkin" onclick="studentTab('checkin')"><span class="tab-ico">✅</span>签到</button>
+        <button class="tab" data-tab="profile" data-route="profile" onclick="studentTab('profile')"><span class="tab-ico">👤</span>我的</button>
+      </div>
+    </div>
+
+    <div id="admin-app" class="app-root hidden">
+      <div id="page-admin-login" class="page active">
+        <div class="admin-login">
+          <div class="admin-card">
+            <h2 style="margin-bottom:12px">管理员登录</h2>
+            <div class="field"><label>账号</label><input id="adminId" class="input" value="admin"></div>
+            <div class="field"><label>密码</label><input id="adminPwd" type="password" class="input" value="admin123"></div>
+            <button class="btn btn-primary" style="width:100%" onclick="handleAdminLogin()">登录</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="page-admin-home" class="page">
+        <div class="admin-wrap">
+          <div class="page-header"><h2>管理后台</h2><button class="btn btn-danger" style="padding:7px 10px" onclick="adminLogout()">退出</button></div>
+          <div class="admin-main admin-shell">
+            <aside class="admin-sidebar">
+              <div class="admin-side-title">管理后台</div>
+              <div id="a-dashboard" class="admin-side-item active" onclick="openAdminSection('dashboard')">📊 仪表盘</div>
+              <div id="a-users" class="admin-side-item" onclick="openAdminSection('users')">👥 用户管理</div>
+              <div id="a-rooms" class="admin-side-item" onclick="openAdminSection('rooms')">🏫 自习室管理</div>
+              <div id="a-seats" class="admin-side-item" onclick="openAdminSection('seats')">💺 座位管理</div>
+              <div id="a-reservations" class="admin-side-item" onclick="openAdminSection('reservations')">📅 预约管理</div>
+              <div id="a-checkins" class="admin-side-item" onclick="openAdminSection('checkins')">📷 签到管理</div>
+              <div id="a-announcements" class="admin-side-item" onclick="openAdminSection('announcements')">📢 公告管理</div>
+              <div id="a-statistics" class="admin-side-item" onclick="openAdminSection('statistics')">📈 统计分析</div>
+              <div id="a-settings" class="admin-side-item" onclick="openAdminSection('settings')">⚙️ 管理设置</div>
+            </aside>
+            <div class="admin-content">
+              <div class="admin-mobile-nav">
+                <button id="am-dashboard" class="admin-mobile-tab active" onclick="openAdminSection('dashboard')">仪表盘</button>
+                <button id="am-users" class="admin-mobile-tab" onclick="openAdminSection('users')">用户</button>
+                <button id="am-rooms" class="admin-mobile-tab" onclick="openAdminSection('rooms')">自习室</button>
+                <button id="am-seats" class="admin-mobile-tab" onclick="openAdminSection('seats')">座位</button>
+                <button id="am-reservations" class="admin-mobile-tab" onclick="openAdminSection('reservations')">预约</button>
+                <button id="am-checkins" class="admin-mobile-tab" onclick="openAdminSection('checkins')">签到</button>
+                <button id="am-announcements" class="admin-mobile-tab" onclick="openAdminSection('announcements')">公告</button>
+                <button id="am-statistics" class="admin-mobile-tab" onclick="openAdminSection('statistics')">统计</button>
+                <button id="am-settings" class="admin-mobile-tab" onclick="openAdminSection('settings')">设置</button>
+              </div>
+              <div class="admin-search"><input class="input" placeholder="搜索学号、姓名、公告..."></div>
+              <div id="admin-dashboard"></div>
+              <div id="admin-rooms" class="hidden"></div>
+              <div id="admin-users" class="hidden"></div>
+              <div id="admin-seats" class="hidden"></div>
+              <div id="admin-reservations" class="hidden"></div>
+              <div id="admin-checkins" class="hidden"></div>
+              <div id="admin-announcements" class="hidden"></div>
+              <div id="admin-statistics" class="hidden"></div>
+              <div id="admin-settings" class="hidden"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DATA_POOL_KEY="study_room_data_pool_v1";
+/* =========================================================
+ * 模块说明：
+ * state：运行状态（登录态、当前页、计时器）
+ * data：业务数据（用户、预约、自习室、通知）
+ * action：页面跳转与行为入口（统一守卫）
+ * render：页面渲染（每个页面单独函数）
+ * ========================================================= */
+const App = {
+  state:{
+    device:"mobile",role:"student",studentLogged:false,adminLogged:false,
+    studentPage:"login",studentHistory:[],adminSection:"dashboard",
+    selectedRoom:0,selectedSeat:null,checkinState:"pending",studySec:0,awaySec:0,
+    timers:{study:null,away:null},
+    quickTime:"",
+    seatFilter:"all",
+    reservationDateOffset:0,
+    pendingReservation:null,
+    myResFilter:"all",
+    statsPeriod:"day",
+    settings:{reserveRemind:true,checkinRemind:true,announcePush:true,dnd:false},
+    adminCurrentId:"",
+    adminSeatBatchSubtype:"普通座位",
+    adminSeatRoom:0,
+    adminRoomFormVisible:false,
+    adminUserPage:1,
+    adminStatsTab:"usage",
+    adminStatsPeriod:"day",
+    editingCellIndex:-1,
+    editingCellContext:"roomForm"
+  },
+  data:{
+    user:{id:"202301010101",name:"张三",credit:280,college:"计算机学院",major:"软件工程",gender:"男",grade:"2026级",phone:"13152940518",email:"zhangsan@campus.edu.cn"},
+    accounts:[
+      {id:"202301010101",password:"123456",name:"张三"}
+    ],
+    managers:[
+      {id:"m-super",name:"系统管理员",title:"平台管理员"},
+      {id:"m-zhang",name:"张老师",title:"图书馆管理员"},
+      {id:"m-li",name:"李老师",title:"图书馆管理员"},
+      {id:"m-wang",name:"王老师",title:"教学楼管理员"},
+      {id:"m-zhou",name:"周老师",title:"教学楼管理员"},
+      {id:"m-liu",name:"刘老师",title:"图书馆管理员"}
+    ],
+    adminAccounts:[
+      {id:"admin",password:"admin123",name:"系统管理员",role:"super",managerId:"m-super"},
+      {id:"zhang_admin",password:"123456",name:"张老师",role:"normal",managerId:"m-zhang"},
+      {id:"li_admin",password:"123456",name:"李老师",role:"normal",managerId:"m-li"},
+      {id:"wang_admin",password:"123456",name:"王老师",role:"normal",managerId:"m-wang"},
+      {id:"zhou_admin",password:"123456",name:"周老师",role:"normal",managerId:"m-zhou"},
+      {id:"liu_admin",password:"123456",name:"刘老师",role:"normal",managerId:"m-liu"}
+    ],
+    rooms:[
+      {id:0,name:"图书馆一楼A区",location:"图书馆1楼东侧",status:"正常",floor:"1楼",openTime:"07:00-22:30",manager:"张老师",seats:24,available:10,facilities:["空调","WiFi","饮水机","充电区"]},
+      {id:1,name:"图书馆二楼B区",location:"图书馆2楼西侧",status:"正常",floor:"2楼",openTime:"07:00-22:30",manager:"李老师",seats:24,available:7,facilities:["空调","WiFi","打印区"]},
+      {id:2,name:"教学楼C201",location:"教学楼C栋2楼",status:"维护中",floor:"2楼",openTime:"08:00-21:00",manager:"王老师",seats:18,available:5,facilities:["空调","WiFi","投影仪"]},
+      {id:3,name:"教学楼D305",location:"教学楼D栋3楼",status:"正常",floor:"3楼",openTime:"08:00-21:00",manager:"周老师",seats:20,available:8,facilities:["空调","WiFi","台灯"]},
+      {id:4,name:"图书馆三楼南区",location:"图书馆3楼南侧",status:"正常",floor:"3楼",openTime:"07:00-22:30",manager:"刘老师",seats:30,available:16,facilities:["空调","WiFi","安静区"]}
+    ],
+    announcements:[
+      {id:1,title:"期末考试期间延长开放时间",date:"2026-04-22",type:"系统通知",pinned:true,content:"为配合期末复习，1月15日至1月25日期间，所有自习室开放时间延长至23:00。请各位同学合理安排学习时间，注意休息。",views:528},
+      {id:2,title:"教学楼C201周末检修通知",date:"2026-04-21",type:"维护通知",pinned:false,content:"教学楼C201本周末进行设备维护，暂停开放。请同学们选择其他自习室。",views:412},
+      {id:3,title:"五一假期预约开放安排",date:"2026-04-16",type:"活动通知",pinned:false,content:"五一期间预约系统正常开放，节假日开放时段为08:00-18:00。",views:680}
+    ],
+    notifications:[
+      {id:1,title:"预约即将开始",text:"你预约的座位将在15分钟后开始",time:"10分钟前",icon:"📅",unread:true},
+      {id:2,title:"系统公告更新",text:"请查看最新开放时间调整",time:"2小时前",icon:"📢",unread:true}
+    ],
+    creditHistory:[
+      {date:"2026-04-20",title:"准时签到",desc:"签到奖励",delta:+5},
+      {date:"2026-04-19",title:"准时签退",desc:"签退奖励",delta:+5},
+      {date:"2026-04-18",title:"准时签到",desc:"签到奖励",delta:+5}
+    ],
+    stats:{
+      day:{labels:["6时","8时","10时","12时","14时","16时","18时","20时","22时"],values:[0,1.5,2.5,0.5,1.8,2.2,1,1.5,0],total:"6.5",avg:"3.2",days:"22"},
+      week:{labels:["周一","周二","周三","周四","周五","周六","周日"],values:[5,6,4,7,6,3,2],total:"33",avg:"4.7",days:"7"},
+      month:{labels:["第1周","第2周","第3周","第4周"],values:[26,31,29,34],total:"120",avg:"4.0",days:"30"}
+    },
+    adminStats:{
+      day:{labels:["6时","8时","10时","12时","14时","16时","18时","20时"],values:[12,38,52,45,57,43,36,24],total:"86",avg:"10.8",days:"1"},
+      week:{labels:["周一","周二","周三","周四","周五","周六","周日"],values:[210,248,232,264,251,198,176],total:"1579",avg:"225.6",days:"7"},
+      month:{labels:["第1周","第2周","第3周","第4周"],values:[820,906,874,958],total:"3558",avg:"889.5",days:"30"}
+    },
+    reservations:[
+      {id:101,room:"图书馆一楼A区",seat:"A-12",date:"2026-04-27",time:"09:00-11:00",status:"pending"},
+      {id:102,room:"图书馆二楼B区",seat:"B-03",date:"2026-04-26",time:"14:00-16:00",status:"done"}
+    ],
+    users:[
+      {id:"202301010101",name:"张三",status:"正常",credit:280,college:"计算机学院"},
+      {id:"202301010102",name:"李四",status:"正常",credit:295,college:"软件学院"},
+      {id:"202301010103",name:"王五",status:"正常",credit:150,college:"管理学院"},
+      {id:"202301010104",name:"赵六",status:"禁用",credit:260,college:"外国语学院"},
+      {id:"202301010105",name:"钱七",status:"正常",credit:300,college:"数学学院"}
+    ],
+    adminReservations:[
+      {id:"R2026042001",sid:"202301010101",name:"张三",room:"图书馆一楼A区",seat:"A-12",date:"2026-04-20",time:"09:00-11:00",status:"使用中"},
+      {id:"R2026042002",sid:"202301010102",name:"李四",room:"图书馆二楼B区",seat:"B-05",date:"2026-04-20",time:"14:00-16:00",status:"待使用"},
+      {id:"R2026041901",sid:"202301010103",name:"王五",room:"教学楼C201",seat:"C-08",date:"2026-04-19",time:"10:00-12:00",status:"已完成"}
+    ],
+    roomForm:{
+      editIndex:-1,name:"",location:"",status:"正常",floor:"",openTime:"07:00-22:30",managerId:"",
+      rows:4,cols:6,seats:20,cellType:"座位类:普通座位",facilities:"空调,WiFi",seatMap:[],customTypes:[],
+      batchScope:"row",batchIndex:"1",batchType:"座位类:普通座位",newTypeClass:"座位类",newTypeName:"",
+      layoutImage:""
+    }
+  },
+  util:{
+    qs:(s)=>document.querySelector(s),
+    qsa:(s)=>Array.from(document.querySelectorAll(s)),
+    mustQS(s,label){
+      const el=document.querySelector(s);
+      if(!el) throw new Error(`缺少必要节点：${label||s}`);
+      return el;
+    },
+    fmtSec(sec){const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60),s=sec%60;return [h,m,s].map(v=>String(v).padStart(2,"0")).join(":")},
+    toast(msg){
+      const wrap=this.qs("#toastWrap"), text=this.qs("#toastText");
+      if(!wrap||!text){ console.warn("[App.toast] 未找到 toast 节点",msg); return; }
+      text.textContent=msg;
+      wrap.classList.remove("hidden");
+      setTimeout(()=>wrap.classList.add("hidden"),1800);
+    }
+  },
+  debug:{
+    enabled:true,
+    maxLogs:300,
+    logs:[],
+    handlersBound:false,
+    checkpoint(name,payload={}){
+      if(!this.enabled) return;
+      const item={time:new Date().toISOString(),name,payload};
+      this.logs.push(item);
+      if(this.logs.length>this.maxLogs) this.logs.shift();
+      console.info(`[CHECKPOINT] ${name}`,payload);
+    },
+    captureError(error,context,payload={}){
+      const message=error&&error.message?error.message:String(error);
+      const detail={context,message,payload,stack:error&&error.stack?error.stack:""};
+      this.checkpoint("error",detail);
+      console.error(`[ERROR] ${context}`,error);
+      App.util.toast(`发生异常：${context}`);
+      return null;
+    },
+    run(context,handler,options={}){
+      const payload=options.payload||{};
+      this.checkpoint(`${context}:start`,payload);
+      try{
+        const result=handler();
+        this.checkpoint(`${context}:ok`,payload);
+        if(options.persist!==false){
+          saveDataPool();
+        }
+        return result;
+      }catch(error){
+        return this.captureError(error,context,payload);
+      }
+    },
+    assert(condition,message,payload={}){
+      if(condition) return;
+      const err=new Error(message);
+      err.payload=payload;
+      throw err;
+    },
+    validateDom(){
+      const required=[
+        "#device-frame","#student-app","#admin-app","#student-bottom-nav",
+        "#toastWrap","#toastText","#notificationList","#seatGrid"
+      ];
+      const missing=required.filter(s=>!document.querySelector(s));
+      this.assert(missing.length===0,"DOM 结构校验失败：存在缺失节点",{missing});
+      this.checkpoint("validateDom:ok",{count:required.length});
+    },
+    validateData(){
+      this.assert(Array.isArray(App.data.rooms),"rooms 数据必须为数组");
+      this.assert(Array.isArray(App.data.managers),"managers 数据必须为数组");
+      this.assert(Array.isArray(App.data.adminAccounts),"adminAccounts 数据必须为数组");
+      this.assert(Array.isArray(App.data.notifications),"notifications 数据必须为数组");
+      this.assert(Array.isArray(App.data.reservations),"reservations 数据必须为数组");
+      this.assert(Array.isArray(App.data.accounts),"accounts 数据必须为数组");
+      this.assert(Array.isArray(App.data.users),"users 数据必须为数组");
+      const managerIds=App.data.managers.map(m=>m.id);
+      this.assert(new Set(managerIds).size===managerIds.length,"负责人 ID 存在重复",{managerIds});
+      App.data.rooms.forEach((room,index)=>{
+        this.assert(typeof room.name==="string"&&room.name.trim().length>0,"自习室名称不能为空",{index});
+        this.assert(Number.isInteger(room.seats)&&room.seats>0,"自习室座位数必须为正整数",{index,seats:room.seats});
+        this.assert(Number.isInteger(room.available)&&room.available>=0&&room.available<=room.seats,"可用座位数非法",{index,available:room.available,seats:room.seats});
+        this.assert(typeof room.managerId==="string"&&room.managerId.trim().length>0,"自习室负责人 ID 缺失",{index,room:room.name});
+        this.assert(managerIds.includes(room.managerId),"自习室负责人 ID 非法",{index,room:room.name,managerId:room.managerId});
+        if(room.layoutImage){
+          this.assert(typeof room.layoutImage==="string","自习室布局图字段类型非法",{index});
+        }
+      });
+      App.data.adminAccounts.forEach((admin,index)=>{
+        this.assert(typeof admin.id==="string"&&admin.id.trim().length>0,"管理员账号 ID 不能为空",{index});
+        this.assert(typeof admin.password==="string"&&admin.password.length>=6,"管理员密码长度非法",{index});
+        this.assert(["super","normal"].includes(admin.role),"管理员角色非法",{index,role:admin.role});
+        this.assert(typeof admin.managerId==="string"&&admin.managerId.trim().length>0,"管理员负责人 ID 缺失",{index,admin:admin.id});
+        this.assert(managerIds.includes(admin.managerId),"管理员负责人 ID 非法",{index,admin:admin.id,managerId:admin.managerId});
+      });
+      App.data.accounts.forEach((acc,index)=>{
+        this.assert(typeof acc.id==="string"&&acc.id.trim().length>0,"账号学号不能为空",{index});
+        this.assert(typeof acc.password==="string"&&acc.password.length>=6,"账号密码长度非法",{index});
+      });
+      const ids=App.data.accounts.map(a=>a.id);
+      this.assert(new Set(ids).size===ids.length,"账号学号存在重复",{ids});
+      App.data.reservations.forEach((res,index)=>{
+        this.assert(typeof res.sid==="string"&&res.sid.trim().length>0,"预约记录缺少学号",{index,id:res.id});
+        const room=getRoomById(res.roomId)||App.data.rooms.find(r=>r.name===res.room);
+        this.assert(!!room,"预约记录中的自习室不存在",{index,roomId:res.roomId,room:res.room});
+      });
+      this.checkpoint("validateData:ok",{rooms:App.data.rooms.length});
+    },
+    validateState(){
+      const validPages=["login","home","reservation","checkin","notifications","profile","myres","credit","stats","settings"];
+      const validCheckin=["pending","active","away","ended"];
+      const validModalContext=["roomForm","adminSeat"];
+      this.assert(validPages.includes(App.state.studentPage),"studentPage 状态非法",{page:App.state.studentPage});
+      this.assert(validCheckin.includes(App.state.checkinState),"checkinState 状态非法",{state:App.state.checkinState});
+      this.assert(Number.isInteger(App.state.selectedRoom)&&App.state.selectedRoom>=0,"selectedRoom 状态非法",{selectedRoom:App.state.selectedRoom});
+      this.assert(Number.isInteger(App.state.reservationDateOffset)&&App.state.reservationDateOffset>=0&&App.state.reservationDateOffset<=6,"reservationDateOffset 状态非法",{offset:App.state.reservationDateOffset});
+      this.assert(validModalContext.includes(App.state.editingCellContext),"editingCellContext 状态非法",{context:App.state.editingCellContext});
+      if(App.state.adminLogged){
+        this.assert(!!getCurrentAdminAccount(),"管理员已登录但账号上下文缺失",{adminCurrentId:App.state.adminCurrentId});
+      }
+      this.checkpoint("validateState:ok",{studentPage:App.state.studentPage,checkinState:App.state.checkinState});
+    },
+    validateHandlers(){
+      const handlers=[
+        "switchDevice","switchRole","handleStudentLogin","studentLogout","studentTab","openPage","goBack",
+        "openNotifications","readNotification","markAllRead","renderSeats","setReservationDate","toggleSeatFilter","reserveSeat","confirmReserveSeat","cancelReserveConfirm",
+        "doCheckin","doAway","doReturn","doCheckout","cancelReservation",
+        "handleAdminLogin","adminLogout","openAdminSection","openRoomEditor","saveRoom","deleteRoom","setQuickTime","setMyResFilter",
+        "closeCheckoutModal","showQrCheckin","closeQrModal","showRegisterModal","closeRegisterModal","submitRegister",
+        "openPersonalInfo","openChangePassword","submitPasswordChange","openAbout","closeGenericModal","setStatsPeriod","toggleSetting",
+        "openAdminUserDetail","toggleAdminSeatState","setAdminSeatRoom","toggleRoomForm","exportAdminReport","openAdminSeatCellTypeModal","saveAdminSeatCellTypeModal",
+        "setAdminUserPage","toggleAdminUserStatus","openAnnouncementEditor","saveAnnouncement","deleteAnnouncement","setAdminStatsTab","setAdminStatsPeriod",
+        "openRepairModal","submitRepair","openFeedbackModal","submitFeedback","mockScanStudentQr","updateRoomGridSize","setRoomDefaultCategory","setRoomDefaultSubtype","setBatchCategory","addCustomCellType","setRoomCellType","applyBatchCellType","openRoomCellTypeModal","saveRoomCellTypeModal",
+        "renderAdminSeatSubtypeChooser","renderRoomCellSubtypeChooser","applyAdminSeatBatch",
+        "openRoomBatchSubtypeModal","saveRoomBatchSubtypeModal","openAdminSeatBatchSubtypeModal","saveAdminSeatBatchSubtypeModal",
+        "setRoomLayoutImage","clearRoomLayoutImage"
+      ];
+      const missing=handlers.filter(name=>typeof window[name]!=="function");
+      this.assert(missing.length===0,"全局处理函数缺失",{missing});
+      this.checkpoint("validateHandlers:ok",{count:handlers.length});
+    },
+    validateUiPaths(){
+      const validStudentPages=["home","reservation","checkin","notifications","profile","myres","credit","stats","settings","login"];
+      const routeEls=Array.from(document.querySelectorAll("[data-route]"));
+      const invalidRoutes=routeEls
+        .map(el=>el.getAttribute("data-route"))
+        .filter(route=>!validStudentPages.includes(route));
+      this.assert(invalidRoutes.length===0,"UI 路由标记存在非法页面",{invalidRoutes});
+      const onclickEls=Array.from(document.querySelectorAll("[onclick]"));
+      const missingOnclick=onclickEls.map(el=>{
+        const expr=(el.getAttribute("onclick")||"").trim();
+        const fn=expr.split("(")[0].trim();
+        return {expr,fn};
+      }).filter(x=>!x.fn||typeof window[x.fn]!=="function");
+      this.assert(missingOnclick.length===0,"UI 点击路径存在未定义函数",{missingOnclick});
+      this.checkpoint("validateUiPaths:ok",{routeCount:routeEls.length,onclickCount:onclickEls.length});
+    },
+    smokeTest(){
+      return this.run("debug.smokeTest",()=>{
+        this.validateDom();
+        this.validateData();
+        this.validateState();
+        this.validateHandlers();
+        this.validateUiPaths();
+        return {ok:true,logSize:this.logs.length};
+      });
+    },
+    bindGlobalHandlers(){
+      if(this.handlersBound) return;
+      window.addEventListener("error",(event)=>{
+        this.captureError(event.error||new Error(event.message||"未知脚本错误"),"window.error",{source:event.filename,line:event.lineno,col:event.colno});
+      });
+      window.addEventListener("unhandledrejection",(event)=>{
+        this.captureError(event.reason||new Error("Promise 未处理拒绝"),"window.unhandledrejection");
+      });
+      this.handlersBound=true;
+      this.checkpoint("debug.handlersBound");
+    }
+  },
+  guard:{
+    student(){ if(!App.state.studentLogged){ App.action.openPage("login",true); return false; } return true; },
+    admin(){ if(!App.state.adminLogged){ App.action.showAdminPage("login"); return false; } return true; }
+  },
+  resolveTab(page){
+    const map={home:"home",reservation:"reservation",checkin:"checkin",profile:"profile",myres:"profile",credit:"profile",stats:"profile",settings:"profile",notifications:"home"};
+    return map[page]||"home";
+  },
+  render:{
+    toggleButtons(){
+      App.util.qs("#btnMobile").style.display="inline-flex";
+      App.util.qs("#btnMobile").classList.toggle("active",App.state.device==="mobile");
+      App.util.qs("#btnDesktop").classList.toggle("active",App.state.device==="desktop");
+      App.util.qs("#btnStudent").classList.toggle("active",App.state.role==="student");
+      App.util.qs("#btnAdmin").classList.toggle("active",App.state.role==="admin");
+    },
+    roleRoot(){
+      App.util.qs("#student-app").classList.toggle("hidden",App.state.role!=="student");
+      App.util.qs("#admin-app").classList.toggle("hidden",App.state.role!=="admin");
+      if(App.state.role==="student") App.action.openPage(App.state.studentLogged?App.state.studentPage:"login",true);
+      if(App.state.role==="admin") App.action.showAdminPage(App.state.adminLogged?"home":"login");
+    },
+    studentBottom(){
+      const show=App.state.studentLogged&&App.state.studentPage!=="login";
+      App.util.qs("#student-bottom-nav").classList.toggle("show",show);
+      App.util.qsa("#student-bottom-nav .tab").forEach(tab=>tab.classList.toggle("active",tab.dataset.tab===App.resolveTab(App.state.studentPage)));
+    },
+    home(){
+      refreshRoomAvailability();
+      const now=new Date();
+      App.util.qs("#welcomeText").textContent=`你好，${App.data.user.name}`;
+      App.util.qs("#todayText").textContent=`${now.getMonth()+1}月${now.getDate()}日`;
+      App.util.qs("#homeBanner").innerHTML=`
+        <div class="hero-banner" style="margin-top:12px">
+          <h4>💡 学习小贴士</h4>
+          <div style="font-size:12px;opacity:.92;line-height:1.7">番茄工作法：每学习 25 分钟休息 5 分钟，建议预约 2-3 小时提高效率。</div>
+        </div>
+      `;
+      App.util.qs("#announcementList").innerHTML=`<div class="announce-row">`+App.data.announcements.map(a=>`
+        <div class="announce-card">
+          <div class="announce-tag">📌 系统通知</div>
+          <div style="font-weight:800;margin-top:4px">${a.title}</div>
+          <div class="muted" style="margin-top:4px">${a.date}</div>
+        </div>
+      `).join("")+`</div>`;
+      const today=getCurrentActiveReservation();
+      App.util.qs("#todayReservation").innerHTML=today?`
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <div style="font-weight:800;color:#0d9488">📌 今日预约</div>
+          <span class="status ${today.status==="active"?"active":"pending"}">${today.status==="active"?"使用中":"待签到"}</span>
+        </div>
+        <div class="today-grid">
+          <div class="label">自习室</div><div class="value">${today.room}</div>
+          <div class="label">座位</div><div class="value">${today.seat}</div>
+          <div class="label">时段</div><div class="value">${today.time}</div>
+        </div>
+      `:`<div class="muted">今日暂无预约，可前往预约页选择座位。</div>`;
+      App.util.qs("#homeQuickEntry").innerHTML=`<div class="recommend-list">`+App.data.rooms.map(r=>`
+      <div class="recommend-item">
+        <div class="recommend-icon">🏫</div>
+        <div><div style="font-weight:800">${r.name}</div><div class="muted">${r.location} · 普通</div></div>
+        <div class="recommend-badge">余${r.available}座</div>
+      </div>`).join("")+`</div>`;
+      App.render.notifBadge();
+    },
+    notifBadge(){
+      const count=App.data.notifications.filter(n=>n.unread).length;
+      const badge=App.util.qs("#notifBadge");
+      badge.textContent=count;
+      badge.style.display=count>0?"flex":"none";
+    },
+    notifications(){
+      App.util.qs("#notificationList").innerHTML=App.data.notifications.map(n=>`
+        <div class="notif-item ${n.unread?"":"read"}" onclick="readNotification(${n.id})">
+          <div class="notif-icon">${n.icon||"🔔"}</div>
+          <div style="flex:1">
+            <div style="font-weight:800;display:flex;justify-content:space-between">
+              <span>${n.unread?`<span class="dot" style="display:inline-block;margin:0 6px 0 0"></span>`:""}${n.title}</span>
+              <span class="muted">${n.time||""}</span>
+            </div>
+            <div class="muted" style="margin-top:4px;line-height:1.6">${n.text}</div>
+          </div>
+        </div>
+      `).join("");
+      App.render.notifBadge();
+    },
+    reservation(){
+      refreshRoomAvailability();
+      App.util.qs("#roomSelect").innerHTML=App.data.rooms.map((r,i)=>`<option value="${i}">${r.name}（余${r.available}）</option>`).join("");
+      App.util.qs("#roomSelect").value=String(App.state.selectedRoom);
+      const weekNames=["日","一","二","三","四","五","六"];
+      const today=new Date();
+      const datePills=Array.from({length:7}).map((_,offset)=>{
+        const d=new Date(today);
+        d.setDate(today.getDate()+offset);
+        const label=offset===0?"今天":`周${weekNames[d.getDay()]}`;
+        return `<div class="date-pill ${offset===App.state.reservationDateOffset?"active":""}" onclick="setReservationDate(${offset})"><div class="meta">${label}</div><div class="day">${String(d.getDate()).padStart(2,"0")}</div><div class="meta">${d.getMonth()+1}月</div></div>`;
+      }).join("");
+      App.util.qs("#datePickerPanel").innerHTML=`
+        <div class="section-title">🗓️ 选择日期</div>
+        <div class="date-scroller">${datePills}</div>
+        <div class="section-title" style="margin-top:10px">🕐 选择时段</div>
+        <div class="card">
+          <div class="time-grid">
+            <div><div class="mini-label">开始-时</div><select class="mini-select"><option>09</option></select></div>
+            <div><div class="mini-label">开始-分</div><select class="mini-select"><option>00</option></select></div>
+            <div style="text-align:center;color:#94a3b8;font-size:20px">→</div>
+            <div><div class="mini-label">结束-时</div><select class="mini-select"><option>11</option></select></div>
+            <div><div class="mini-label">结束-分</div><select class="mini-select"><option>00</option></select></div>
+          </div>
+        </div>
+      `;
+      App.util.qsa(".filter-chip").forEach(chip=>{
+        chip.classList.toggle("active",chip.getAttribute("data-seat-filter")===App.state.seatFilter);
+      });
+      App.render.seats();
+    },
+    seats(){
+      const room=App.data.rooms[App.state.selectedRoom];
+      const cols=Math.max(1,parseInt(room.cols,10)||6);
+      const total=Math.max(1,parseInt(room.seats,10)||cols*4);
+      const seatMap=Array.isArray(room.seatMap)?room.seatMap:[];
+      const busySeatSet=new Set(
+        App.data.reservations
+          .filter(r=>["pending","active","away"].includes(r.status)&&String(r.roomId)===String(room.id))
+          .map(r=>r.seat)
+      );
+      const seatModels=Array.from({length:total}).map((_,i)=>{
+        const row=String.fromCharCode(65+Math.floor(i/cols));
+        const num=`${row}-${String(i+1).padStart(2,"0")}`;
+        const cellType=seatMap[i]||room.cellType||"座位类:普通座位";
+        const parsed=parseCellTypeValue(cellType);
+        const names=parsed.names;
+        const isSeatCell=parsed.category==="座位类";
+        const attrs={
+          power:names.includes("电源"),
+          window:names.includes("靠窗"),
+          quiet:names.includes("静音"),
+          hot:names.includes("热门")
+        };
+        const match=App.state.seatFilter==="all"||attrs[App.state.seatFilter];
+        const isBusy=isSeatCell&&busySeatSet.has(num);
+        const isSel=App.state.selectedSeat===i;
+        let section="标准区";
+        if(!isSeatCell) section="非座位区";
+        else if(attrs.quiet&&attrs.power) section="静音区-电源位";
+        else if(attrs.quiet) section="静音区";
+        else if(attrs.power||attrs.window) section="精品区";
+        else if(attrs.hot) section="热门区";
+        const stateClass=isBusy?"busy":(isSel?"sel":"free");
+        return {i,num,attrs,match,isBusy,isSel,section,stateClass,isSeatCell,typeNames:names};
+      });
+      const sectionOrder=["精品区","热门区","静音区","静音区-电源位","标准区","非座位区"];
+      const sections=sectionOrder.map(name=>({
+        name,
+        seats:seatModels.filter(x=>x.section===name)
+      })).filter(x=>x.seats.length>0);
+      App.util.qs("#seatGrid").innerHTML=`
+        <div class="seat-overview">
+          <div class="seat-overview-head">
+            <div style="font-weight:800">🗺️ 座位分布图</div>
+            <div class="muted">${room.name}</div>
+          </div>
+          <div class="layout-preview">
+            ${room.layoutImage
+              ? `<img src="${room.layoutImage}" alt="自习室布局图">`
+              : `<div class="layout-placeholder">暂无布局图片<br>请在管理端-自习室管理上传布局大图</div>`
+            }
+          </div>
+        </div>
+        <div class="seat-sections">
+          ${sections.map(sec=>`
+            <div class="seat-section">
+              <div class="seat-section-title">${sec.name}（可预约 ${sec.seats.filter(x=>x.isSeatCell&&!x.isBusy).length}）</div>
+              <div class="seat-section-grid">
+                ${sec.seats.map(s=>{
+                  const klass=`${s.stateClass} ${s.match?"":"off"}`;
+                  const click=s.isBusy||!s.match||!s.isSeatCell?"":"onclick='reserveSeat("+s.i+")'";
+                  return `<button class="seat ${klass}" ${click}>${s.num}${s.isSeatCell?"":"*"}<\/button>`;
+                }).join("")}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    },
+    checkin(){
+      const s=App.state.checkinState;
+      const status=App.util.qs("#checkinStatus");
+      status.className=`status ${s}`;
+      status.textContent={pending:"待签到",active:"使用中",away:"暂离中",ended:"已结束"}[s];
+      App.util.qs("#studyTimer").textContent=App.util.fmtSec(App.state.studySec);
+      App.util.qs("#awayHint").textContent=s==="away"?`暂离倒计时：${App.util.fmtSec(App.state.awaySec)}`:"";
+      const activeRes=getCurrentActiveReservation();
+      App.util.qs("#checkinInfoCard").innerHTML=activeRes?`
+        <div class="checkin-info-card">
+          <div class="checkin-row"><div class="k">自习室</div><div class="v">${activeRes.room}</div></div>
+          <div class="checkin-row"><div class="k">座位号</div><div class="v">${activeRes.seat}</div></div>
+          <div class="checkin-row"><div class="k">预约时段</div><div class="v">${activeRes.time}</div></div>
+          <div class="checkin-row"><div class="k">预约日期</div><div class="v">${activeRes.date||"-"}</div></div>
+        </div>
+      `:"";
+      let actions="";
+      if(s==="pending") actions=`
+        <div class="checkin-big-actions">
+          <button class="round-action primary" onclick="showQrCheckin()"><span style="font-size:28px">📱</span><span>出示二维码签到</span></button>
+          <button class="round-action warning" onclick="openRepairModal()"><span style="font-size:24px">💬</span><span>问题反馈</span></button>
+        </div>
+        <div class="checkin-hint-card" style="margin-top:10px">请在预约开始前后 15 分钟内完成签到。</div>
+      `;
+      if(s==="active") actions=`
+        <div class="checkin-big-actions"><button class="round-action danger" onclick="doCheckout()"><span style="font-size:24px">🚪</span><span>签退</span></button><button class="round-action warning" onclick="openRepairModal()"><span style="font-size:24px">💬</span><span>问题反馈</span></button></div>
+        <div class="checkin-hint-card" style="margin-top:10px">请在预约结束前完成签退。</div>
+      `;
+      if(s==="ended") actions=`<button class="btn btn-outline" style="width:100%" onclick="studentTab('reservation')">重新预约座位</button>`;
+      App.util.qs("#checkinActions").innerHTML=actions;
+    },
+    profile(){
+      App.util.qs("#profileContent").innerHTML=`
+        <div class="card">
+          <div class="profile-head">
+            <div class="profile-avatar" id="profileAvatar">${App.data.user.name.slice(0,1)}</div>
+            <div><h3 id="profileName">${App.data.user.name}</h3><p class="muted" id="profileId">学号：${App.data.user.id}</p><p class="muted">${App.data.user.college||"计算机科学与技术学院"}</p></div>
+          </div>
+        </div>
+        <div class="profile-group-title">功能服务</div>
+        <div class="card profile-menu">
+          <div class="profile-item" data-route="myres" onclick="openPage('myres')"><span class="pi-icon">📋</span><span>我的预约</span><span class="profile-arrow">›</span></div>
+          <div class="profile-item" data-route="credit" onclick="openPage('credit')"><span class="pi-icon">⭐</span><span>信用积分</span><span class="profile-arrow">›</span></div>
+          <div class="profile-item" data-route="stats" onclick="openPage('stats')"><span class="pi-icon">📊</span><span>学习统计</span><span class="profile-arrow">›</span></div>
+        </div>
+        <div class="profile-group-title">账号与安全</div>
+        <div class="card profile-menu">
+          <div class="profile-item" onclick="openPersonalInfo()"><span class="pi-icon">📝</span><span>个人信息</span><span class="profile-arrow">›</span></div>
+          <div class="profile-item" onclick="openChangePassword()"><span class="pi-icon">🔒</span><span>修改密码</span><span class="profile-arrow">›</span></div>
+          <div class="profile-item" data-route="settings" onclick="openPage('settings')"><span class="pi-icon">⚙️</span><span>设置</span><span class="profile-arrow">›</span></div>
+          <div class="profile-item" onclick="openAbout()"><span class="pi-icon">ℹ️</span><span>关于系统</span><span class="profile-arrow">›</span></div>
+          <div class="profile-item" onclick="openFeedbackModal()"><span class="pi-icon">💬</span><span>问题反馈</span><span class="profile-arrow">›</span></div>
+          <div class="profile-item" onclick="studentLogout()"><span class="pi-icon">🚪</span><span style="color:#e17055;font-weight:800">退出登录</span><span class="profile-arrow">›</span></div>
+        </div>
+      `;
+    },
+    credit(){
+      const score=App.data.user.credit||280;
+      const percent=Math.max(0,Math.min(100,Math.round(score/300*100)));
+      const ownReservations=getCurrentUserReservations();
+      const totalReserve=ownReservations.length;
+      const punctual=App.data.creditHistory.filter(x=>/准时签到|准时签退/.test(x.title)).length;
+      const violation=App.data.creditHistory.filter(x=>x.delta<0).length+ownReservations.filter(x=>x.status==="violation").length;
+      App.util.qs("#creditContent").innerHTML=`
+        <div class="card" style="text-align:center">
+          <div class="score-ring" style="--p:${percent}%">
+            <div class="score-core"><div style="font-size:62px;font-weight:900;color:#4f6ef7">${score}</div><div class="muted">/ 300</div></div>
+          </div>
+          <div class="status active" style="margin-top:12px">优秀</div>
+        </div>
+        <div class="stats-three">
+          <div class="card"><div style="font-size:42px;font-weight:900;color:#4f6ef7">${totalReserve}</div><div class="muted">总预约次数</div></div>
+          <div class="card"><div style="font-size:42px;font-weight:900;color:#4f6ef7">${punctual}</div><div class="muted">准时签到</div></div>
+          <div class="card"><div style="font-size:42px;font-weight:900;color:#4f6ef7">${violation}</div><div class="muted">违约次数</div></div>
+        </div>
+        <div class="section-title">📜 积分变动记录</div>
+        ${App.data.creditHistory.map(item=>`<div class="card"><div style="display:flex;justify-content:space-between"><div><div style="font-weight:800">${item.title}</div><div class="muted">${item.date} · ${item.desc}</div></div><div style="font-size:36px;font-weight:900;color:#00b894">+${item.delta}</div></div></div>`).join("")}
+        <div class="card" style="background:#f7f9ff;border:1px solid #e8eeff">
+          <div style="font-size:18px;font-weight:900;color:#4f6ef7">📋 信用积分守则</div>
+          <div class="muted" style="margin-top:8px;line-height:1.8">
+            初始积分 300 分，未签到扣 50 分，超时暂离扣 30 分。<br>
+            准时签到奖励 5 分，累计 5 次准时签到额外奖励 10 分。<br>
+            积分低于 60 分将触发黑名单限制 7 天。
+          </div>
+        </div>
+      `;
+    },
+    stats(){
+      const d=App.data.stats[App.state.statsPeriod];
+      const max=Math.max(...d.values,1);
+      App.util.qs("#statsContent").innerHTML=`
+        <div class="period-tabs">
+          <button class="${App.state.statsPeriod==="day"?"active":""}" onclick="setStatsPeriod('day')">日报</button>
+          <button class="${App.state.statsPeriod==="week"?"active":""}" onclick="setStatsPeriod('week')">周报</button>
+          <button class="${App.state.statsPeriod==="month"?"active":""}" onclick="setStatsPeriod('month')">月报</button>
+        </div>
+        <div class="stats-three" style="margin-top:10px">
+          <div class="card"><div style="font-size:30px;font-weight:900;color:#4f6ef7">${d.total}</div><div class="muted">小时</div><div style="font-size:13px;font-weight:800">总学习时长</div></div>
+          <div class="card"><div style="font-size:30px;font-weight:900;color:#4f6ef7">${d.avg}</div><div class="muted">小时</div><div style="font-size:13px;font-weight:800">日均时长</div></div>
+          <div class="card"><div style="font-size:30px;font-weight:900;color:#4f6ef7">${d.days}</div><div class="muted">天</div><div style="font-size:13px;font-weight:800">学习天数</div></div>
+        </div>
+        <div class="card">
+          <div style="font-weight:900;font-size:16px;margin-bottom:8px">${App.state.statsPeriod==="day"?"今日各时段学习时长（小时）":(App.state.statsPeriod==="week"?"本周每日学习时长（小时）":"本月每周学习时长（小时）")}</div>
+          <div class="bars">${d.values.map((v,i)=>`<div class="b" style="height:${Math.max(8,(v/max)*100)}%"><span>${v}</span><i>${d.labels[i]}</i></div>`).join("")}</div>
+        </div>
+        <div class="card"><div style="font-weight:900;color:#4f6ef7">📈 学习建议</div><div class="muted" style="font-size:14px;line-height:1.7;margin-top:8px">你今日的学习效率较高，建议保持。最佳学习时段为上午9-11点。</div></div>
+      `;
+    },
+    settings(){
+      const s=App.state.settings;
+      App.util.qs("#settingsContent").innerHTML=`
+        <div class="profile-group-title">账号与安全</div>
+        <div class="card profile-menu">
+          <div class="profile-item" onclick="openChangePassword()"><span class="pi-icon">🔐</span><span>修改密码</span><span class="profile-arrow">›</span></div>
+          <div class="profile-item"><span class="pi-icon">📱</span><span>手机绑定</span><span class="muted">${App.data.user.phone||"未绑定"}</span><span class="profile-arrow">›</span></div>
+          <div class="profile-item"><span class="pi-icon">✉️</span><span>邮箱绑定</span><span class="muted">${App.data.user.email||"未绑定"}</span><span class="profile-arrow">›</span></div>
+        </div>
+        <div class="profile-group-title">通知偏好</div>
+        <div class="card">
+          <div class="setting-item"><span>预约提醒</span><div class="switch ${s.reserveRemind?"on":""}" onclick="toggleSetting('reserveRemind')"></div></div>
+          <div class="setting-item"><span>签到提醒</span><div class="switch ${s.checkinRemind?"on":""}" onclick="toggleSetting('checkinRemind')"></div></div>
+          <div class="setting-item"><span>公告推送</span><div class="switch ${s.announcePush?"on":""}" onclick="toggleSetting('announcePush')"></div></div>
+          <div class="setting-item"><span>免打扰模式</span><div class="switch ${s.dnd?"on":""}" onclick="toggleSetting('dnd')"></div></div>
+        </div>
+        <div class="profile-group-title">通用</div>
+        <div class="card profile-menu">
+          <div class="profile-item"><span class="pi-icon">❓</span><span>帮助与反馈</span><span class="profile-arrow">›</span></div>
+          <div class="profile-item" onclick="openAbout()"><span class="pi-icon">ℹ️</span><span>关于系统</span><span class="muted">v2.0.0</span><span class="profile-arrow">›</span></div>
+        </div>
+      `;
+    },
+    myReservations(){
+      const ownReservations=getCurrentUserReservations();
+      App.util.qs("#myReservationList").innerHTML=`
+        <div class="inline-tabs" style="margin-bottom:10px">
+          <button class="inline-tab ${App.state.myResFilter==="all"?"active":""}" onclick="setMyResFilter('all')">全部</button>
+          <button class="inline-tab ${App.state.myResFilter==="pending"?"active":""}" onclick="setMyResFilter('pending')">待使用</button>
+          <button class="inline-tab ${App.state.myResFilter==="active"?"active":""}" onclick="setMyResFilter('active')">使用中</button>
+          <button class="inline-tab ${App.state.myResFilter==="ended"?"active":""}" onclick="setMyResFilter('ended')">已结束</button>
+          <button class="inline-tab ${App.state.myResFilter==="cancelled"?"active":""}" onclick="setMyResFilter('cancelled')">已取消</button>
+        </div>
+      `+ownReservations.filter(r=>{
+        if(App.state.myResFilter==="all") return true;
+        if(App.state.myResFilter==="ended") return ["done","ended","violation"].includes(r.status);
+        if(App.state.myResFilter==="cancelled") return r.status==="cancelled";
+        return r.status===App.state.myResFilter;
+      }).map(r=>`
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <div style="font-weight:800">${r.room} · ${r.seat}</div>
+            <span class="status ${r.status==="active"?"active":(r.status==="pending"?"pending":"ended")}">${r.status}</span>
+          </div>
+          <div class="muted" style="margin-top:6px">${r.date||"-"} · ${r.time}</div>
+          ${r.status==="pending"?`<button class="btn btn-danger" style="margin-top:10px" onclick="cancelReservation(${r.id})">取消预约</button>`:""}
+        </div>
+      `).join("") || `<div class="card"><div class="muted">当前筛选下暂无预约记录</div></div>`;
+    },
+    adminDashboard(){
+      const allAdminReservations=getUnifiedAdminReservations();
+      const todayStr=new Date().toISOString().slice(0,10);
+      const todayTotal=allAdminReservations.filter(r=>r.date===todayStr).length;
+      const activeUsers=App.data.users.filter(u=>u.status==="正常").length;
+      const allSeats=App.data.rooms.reduce((sum,r)=>sum+r.seats,0);
+      const usedSeats=App.data.rooms.reduce((sum,r)=>sum+(r.seats-r.available),0);
+      const usageRate=allSeats?Math.round(usedSeats/allSeats*100):0;
+      const violation=App.data.reservations.filter(r=>r.status==="violation").length;
+      App.util.qs("#admin-dashboard").innerHTML=`
+        <div class="admin-dashboard-grid">
+          <div class="stat-card"><div class="muted">今日预约</div><div class="num">${todayTotal}</div></div>
+          <div class="stat-card"><div class="muted">活跃用户</div><div class="num">${activeUsers}</div></div>
+          <div class="stat-card"><div class="muted">座位使用率</div><div class="num">${usageRate}%</div></div>
+          <div class="stat-card"><div class="muted">今日违约</div><div class="num">${violation}</div></div>
+        </div>
+        <div class="card">
+          <div style="font-weight:800;margin-bottom:8px">本周预约趋势</div>
+          <div class="bar-chart">
+            <div class="bar" style="height:62%"></div>
+            <div class="bar" style="height:74%"></div>
+            <div class="bar" style="height:68%"></div>
+            <div class="bar" style="height:82%"></div>
+            <div class="bar" style="height:76%"></div>
+            <div class="bar" style="height:54%"></div>
+            <div class="bar" style="height:46%"></div>
+          </div>
+        </div>
+        <div class="admin-table-wrap" style="margin-top:10px">
+          <table class="admin-table">
+            <thead><tr><th>学号</th><th>姓名</th><th>自习室</th><th>座位</th><th>时段</th><th>状态</th></tr></thead>
+            <tbody>
+              <tr><td>202301010101</td><td>张三</td><td>图书馆一楼A区</td><td>A-12</td><td>09:00-11:00</td><td><span class="status active">使用中</span></td></tr>
+              <tr><td>202301010102</td><td>李四</td><td>图书馆二楼B区</td><td>B-05</td><td>14:00-16:00</td><td><span class="status pending">待使用</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      `;
+    },
+    adminRooms(){
+      const manageableRooms=getManageableRooms();
+      const list=manageableRooms.map((r)=>{
+        const i=App.data.rooms.indexOf(r);
+        return `
+        <div class="room-item">
+          <div>
+            <div class="room-head">
+              <div class="room-title-wrap"><div class="room-icon">🏫</div><div style="font-weight:800">${r.name}</div></div>
+            </div>
+            <div class="muted" style="margin-top:6px">${r.location}</div>
+            <div class="room-meta">
+              <div>👤 负责人：${getRoomManagerName(r)}</div>
+              <div>🕒 开放：${r.openTime||"07:00-22:30"}</div>
+              <div>🏢 楼层：${r.floor||"未设置"}</div>
+              <div>💺 总座位：${r.seats}</div>
+              <div>📌 状态：${r.status||"正常"}</div>
+            </div>
+            <div class="room-tags">${(r.facilities||[]).map(tag=>`<span class="room-tag">${tag}</span>`).join("")}</div>
+          </div>
+          <div class="room-side">
+            <div class="summary-row" style="padding:0 0 8px 0;border:none;display:flex;justify-content:flex-end"><span class="mini-badge active">余位 ${r.available}</span></div>
+            <div class="room-actions" style="justify-content:flex-end">
+              <button class="btn btn-outline" onclick="openRoomEditor(${i})">编辑</button>
+              ${isSuperAdmin()?`<button class="btn btn-danger" onclick="deleteRoom(${i})">删除</button>`:""}
+            </div>
+          </div>
+        </div>
+      `;
+      }).join("");
+      const f=App.data.roomForm;
+      const typeOptions=getCellTypeOptions(f.customTypes||[]);
+      const defaultType=splitCellType(f.cellType);
+      const defaultSubTypes=getSubTypesByCategory(defaultType.category,f.customTypes||[]);
+      const batchSubTypes=getSubTypesByCategory(f.batchCategory||"座位类",f.customTypes||[]);
+      const totalCells=Math.max(1,(parseInt(f.rows,10)||1)*(parseInt(f.cols,10)||1));
+      App.util.qs("#admin-rooms").innerHTML=`
+        <div class="admin-head-actions">
+          <h3 style="margin:0">自习室管理</h3>
+          ${isSuperAdmin()
+            ? `<button class="btn btn-primary" onclick="toggleRoomForm()">${(App.state.adminRoomFormVisible||f.editIndex>-1)?"收起表单":"新增自习室"}</button>`
+            : `<div class="mini-badge pending">普通管理员仅可编辑本人负责自习室</div>`}
+        </div>
+        <div class="card ${(App.state.adminRoomFormVisible||f.editIndex>-1)?"":"hidden"}">
+          <h3 style="margin-bottom:8px">${f.editIndex>-1?"编辑自习室":"新增自习室"}</h3>
+          <div class="room-row">
+            <div class="field" style="flex:1"><label>名称</label><input id="rfName" class="input" value="${f.name}"></div>
+            <div class="field" style="flex:1"><label>位置</label><input id="rfLoc" class="input" value="${f.location}"></div>
+          </div>
+          <div class="room-row">
+            <div class="field" style="flex:1"><label>自习室情况</label><select id="rfStatus" class="input"><option ${f.status==="正常"?"selected":""}>正常</option><option ${f.status==="维护中"?"selected":""}>维护中</option><option ${f.status==="暂停开放"?"selected":""}>暂停开放</option></select></div>
+            <div class="field" style="flex:1"><label>负责人</label>
+              <select id="rfManagerId" class="input" ${isSuperAdmin()?"":"disabled"}>
+                ${(()=>{
+                  const adminManager=getCurrentAdminManager();
+                  const options=isSuperAdmin()?App.data.managers:(adminManager?[adminManager]:[]);
+                  const selected=f.managerId||((adminManager&&adminManager.id)||"");
+                  return options.map(m=>`<option value="${m.id}" ${selected===m.id?"selected":""}>${m.name}</option>`).join("");
+                })()}
+              </select>
+            </div>
+          </div>
+          <div class="room-row">
+            <div class="field" style="flex:1"><label>开放时段</label><input id="rfOpenTime" class="input" value="${f.openTime||"07:00-22:30"}" placeholder="例如：07:00-22:30"></div>
+            <div class="field" style="flex:1"><label>楼层</label><input id="rfFloor" class="input" value="${f.floor||""}" placeholder="例如：2楼"></div>
+          </div>
+          <div class="field"><label>设施（逗号分隔）</label><input id="rfFacilities" class="input" value="${f.facilities||"空调,WiFi"}"></div>
+          <div class="field">
+            <label>自习室布局大图（学生端座位分布图示意）</label>
+            <input id="rfLayoutImage" class="input" type="file" accept="image/*" onchange="setRoomLayoutImage(this)">
+            <div class="muted" style="margin-top:6px">${f.layoutImage?"已上传布局图，保存后学生端生效":"暂无布局图，学生端将显示“暂无图片”占位。"}</div>
+            ${f.layoutImage?`<button class="btn btn-outline" style="margin-top:8px" onclick="clearRoomLayoutImage()">清除当前布局图</button>`:""}
+          </div>
+          <div class="room-row">
+            <div class="field" style="flex:1"><label>默认单元格类型：顶层分类</label><select id="rfCellCategory" class="input" onchange="setRoomDefaultCategory(this.value)"><option ${defaultType.category==="座位类"?"selected":""}>座位类</option><option ${defaultType.category==="非座位类"?"selected":""}>非座位类</option></select></div>
+            <div class="field" style="flex:1"><label>默认单元格类型：子类名称</label><select id="rfCellSubtype" class="input" onchange="setRoomDefaultSubtype(this.value)">${defaultSubTypes.map(n=>`<option ${defaultType.name===n?"selected":""}>${n}</option>`).join("")}</select></div>
+          </div>
+          <div class="card subtype-block" style="margin-bottom:10px">
+            <div style="font-weight:800;margin-bottom:6px">新增单元格子类</div>
+            <div class="room-row">
+              <div class="field" style="flex:1"><label>顶层分类</label><select id="rfNewTypeClass" class="input"><option ${f.newTypeClass==="座位类"?"selected":""}>座位类</option><option ${f.newTypeClass==="非座位类"?"selected":""}>非座位类</option></select></div>
+              <div class="field" style="flex:1"><label>子层分类</label><input id="rfNewTypeName" class="input" value="${f.newTypeName||""}" placeholder="例如：教师专位 / 图书架"></div>
+            </div>
+            <button class="btn btn-outline" style="width:100%" onclick="addCustomCellType()">新增子类</button>
+          </div>
+          <div class="room-row">
+            <div class="field" style="flex:1"><label>单元格行数</label><input id="rfRows" class="input" type="number" min="1" max="20" value="${f.rows}" onchange="updateRoomGridSize()"></div>
+            <div class="field" style="flex:1"><label>单元格列数</label><input id="rfCols" class="input" type="number" min="1" max="20" value="${f.cols}" onchange="updateRoomGridSize()"></div>
+          </div>
+          <div class="field"><label>自选单元格配置</label><div class="seat-map-grid">${Array.from({length:totalCells}).map((_,i)=>{
+            const val=((f.seatMap&&f.seatMap[i])||f.cellType||"座位类:普通座位");
+            const isSeat=isSeatCellType(val);
+            const isPower=val.includes("电源");
+            const cls=isSeat?(isPower?"power":""): "nonseat";
+            const labels=parseCellTypeValue(val).names;
+            return `<button type="button" class="cell-grid-btn ${cls}" onclick="openRoomCellTypeModal(${i})">
+              <div>R${Math.floor(i/(parseInt(f.cols,10)||1))+1}-C${(i%(parseInt(f.cols,10)||1))+1}</div>
+              <div class="cell-tags">${labels.map(x=>`<span class="cell-tag">${x}</span>`).join("")}</div>
+            </button>`;
+          }).join("")}</div></div>
+          <div class="field">
+            <label>批量设置单元格性质</label>
+            <div class="cell-toolbar batch-one-line">
+              <select id="rfBatchScope" class="input"><option ${f.batchScope==="row"?"selected":""} value="row">按行</option><option ${f.batchScope==="col"?"selected":""} value="col">按列</option></select>
+              <input id="rfBatchIndex" class="input" value="${f.batchIndex||"1"}" placeholder="行/列序号">
+              <select id="rfBatchCategory" class="input" onchange="setBatchCategory(this.value)"><option ${f.batchCategory==="座位类"?"selected":""}>座位类</option><option ${f.batchCategory==="非座位类"?"selected":""}>非座位类</option></select>
+              <button class="btn btn-outline" type="button" onclick="openRoomBatchSubtypeModal()">选择子类</button>
+              <input class="input" value="${parseSubtypeListValue(f.batchSubtype).join(' / ')||'未选择'}" readonly>
+            </div>
+            <button class="btn btn-outline" style="width:100%;margin-top:8px" onclick="applyBatchCellType()">应用批量设置</button>
+          </div>
+          <button class="btn btn-primary" style="width:100%" onclick="saveRoom()">保存自习室信息</button>
+        </div>
+        ${manageableRooms.length===0?`<div class="card"><div class="muted">当前管理员暂无负责自习室，请联系超级管理员分配负责人。</div></div>`:""}
+        ${list}
+      `;
+    },
+    adminUsers(){
+      const pageSize=3;
+      const totalPages=Math.max(1,Math.ceil(App.data.users.length/pageSize));
+      const page=Math.min(App.state.adminUserPage,totalPages);
+      const start=(page-1)*pageSize;
+      const rows=App.data.users.slice(start,start+pageSize);
+      App.util.qs("#admin-users").innerHTML=`
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>学号</th><th>姓名</th><th>学院</th><th>信用积分</th><th>状态</th><th>操作</th></tr></thead>
+            <tbody>
+              ${rows.map(u=>`
+                <tr>
+                  <td>${u.id}</td>
+                  <td>${u.name}</td>
+                  <td>${u.college||"计算机学院"}</td>
+                  <td style="font-weight:800;color:#059669">${u.credit||0}</td>
+                  <td><span class="status ${u.status==="正常"?"active":"ended"}"><span class="status-dot" style="background:${u.status==="正常"?"#10b981":"#94a3b8"}"></span>${u.status}</span></td>
+                  <td style="display:flex;gap:8px">
+                    <button class="btn btn-outline" style="padding:6px 10px" onclick="openAdminUserDetail('${u.id}')">查看</button>
+                    <button class="btn ${u.status==='正常'?'btn-danger':'btn-primary'}" style="padding:6px 10px" onclick="toggleAdminUserStatus('${u.id}')">${u.status==='正常'?'禁用':'启用'}</button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+        <div class="admin-pager">
+          ${Array.from({length:totalPages}).map((_,i)=>`<button class="${page===i+1?"active":""}" onclick="setAdminUserPage(${i+1})">${i+1}</button>`).join("")}
+        </div>
+      `;
+    },
+    /* 座位管理（管理端）
+     * 输入：当前选中的 room（App.state.adminSeatRoom）
+     * 输出：与“新增自习室”一致风格的房间信息 + 单元格网格
+     * 目标：座位状态来源于真实 room.seatMap，点击单元格走弹窗切换类型
+     */
+    adminSeats(){
+      const manageableRooms=getManageableRooms();
+      const room=App.data.rooms[App.state.adminSeatRoom]||manageableRooms[0];
+      if(!room||!canManageRoom(room)){
+        App.util.qs("#admin-seats").innerHTML=`<div class="card"><div class="muted">当前管理员无可管理自习室。</div></div>`;
+        return;
+      }
+      const rows=Math.max(1,parseInt(room.rows,10)||4);
+      const cols=Math.max(1,parseInt(room.cols,10)||6);
+      const totalCells=Math.max(1,rows*cols);
+      const map=Array.isArray(room.seatMap)?room.seatMap:[];
+      const normalizedSeatMap=Array.from({length:totalCells}).map((_,i)=>map[i]||room.cellType||"座位类:普通座位");
+      const seatCount=normalizedSeatMap.filter(isSeatCellType).length;
+      const batchSubTypes=getSubTypesByCategory("座位类",room.customTypes||[]);
+      App.util.qs("#admin-seats").innerHTML=`
+        <div class="card">
+          <div class="admin-head-actions">
+            <h3 style="margin:0">座位管理</h3>
+            <button class="btn btn-outline" onclick="openRoomEditor(${App.state.adminSeatRoom})">编辑当前自习室</button>
+          </div>
+          <div class="room-row">
+            <div class="field" style="flex:1"><label>自习室选择</label>
+              <select class="input" onchange="setAdminSeatRoom(this.value)">
+                ${manageableRooms.map((it)=>{
+                  const idx=App.data.rooms.indexOf(it);
+                  return `<option value="${idx}" ${idx===App.state.adminSeatRoom?"selected":""}>${it.name}</option>`;
+                }).join("")}
+              </select>
+            </div>
+            <div class="field" style="flex:1"><label>当前状态</label><input class="input" value="${room.status||"正常"}" disabled></div>
+          </div>
+          <div class="room-row">
+            <div class="field" style="flex:1"><label>负责人</label><input class="input" value="${getRoomManagerName(room)}" disabled></div>
+            <div class="field" style="flex:1"><label>开放时段</label><input class="input" value="${room.openTime||"07:00-22:30"}" disabled></div>
+          </div>
+          <div class="room-row">
+            <div class="field" style="flex:1"><label>单元格行数</label><input class="input" value="${rows}" disabled></div>
+            <div class="field" style="flex:1"><label>单元格列数</label><input class="input" value="${cols}" disabled></div>
+          </div>
+          <div class="summary-row" style="margin:8px 0 12px 0">
+            <span class="mini-badge active">总单元格 ${totalCells}</span>
+            <span class="mini-badge pending">座位类单元格 ${seatCount}</span>
+            <span class="mini-badge done">当前可用 ${room.available||0}</span>
+          </div>
+          <div class="legend" style="margin:8px 0 10px 0">
+            <div class="legend-item"><span class="legend-dot" style="background:#eefbf7"></span>座位类</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#f3f4f6"></span>非座位类</div>
+            <div class="legend-item"><span class="legend-dot" style="background:#fff4e6"></span>电源类</div>
+          </div>
+          <div class="field">
+            <label>座位单元格图（点击任意单元格可切换性质）</label>
+            <div class="seat-map-grid">${normalizedSeatMap.map((val,i)=>{
+              const isSeat=isSeatCellType(val);
+              const isPower=val.includes("电源");
+              const cls=isSeat?(isPower?"power":""):"nonseat";
+              const labels=parseCellTypeValue(val).names;
+              return `<button type="button" class="cell-grid-btn ${cls}" onclick="openAdminSeatCellTypeModal(${i})">
+                <div>R${Math.floor(i/cols)+1}-C${(i%cols)+1}</div>
+                <div class="cell-tags">${labels.map(x=>`<span class="cell-tag">${x}</span>`).join("")}</div>
+              </button>`;
+            }).join("")}</div>
+          </div>
+          <div class="field">
+            <label>批量设置（座位管理）</label>
+            <div class="cell-toolbar batch-one-line">
+              <select id="asBatchScope" class="input"><option value="row">按行</option><option value="col">按列</option></select>
+              <input id="asBatchIndex" class="input" value="1" placeholder="行/列序号">
+              <select class="input" disabled><option selected>座位类</option></select>
+              <button class="btn btn-outline" type="button" onclick="openAdminSeatBatchSubtypeModal()">选择子类</button>
+              <input class="input" value="${parseSubtypeListValue(App.state.adminSeatBatchSubtype).join(' / ')||'未选择'}" readonly>
+            </div>
+            <button class="btn btn-outline" style="width:100%;margin-top:8px" onclick="applyAdminSeatBatch()">应用批量设置</button>
+          </div>
+        </div>
+      `;
+    },
+    adminReservations(){
+      const rows=getUnifiedAdminReservations().map(r=>{
+        const cls=r.statusClass;
+        return `
+          <tr>
+            <td>${r.id}</td><td>${r.sid}</td><td>${r.name}</td><td>${r.room}</td>
+            <td>${r.seat}</td><td>${r.date}</td><td>${r.time}</td>
+            <td><span class="mini-badge ${cls}">${r.status}</span></td>
+          </tr>
+        `;
+      }).join("");
+      App.util.qs("#admin-reservations").innerHTML=`
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead><tr><th>预约号</th><th>学号</th><th>姓名</th><th>自习室</th><th>座位</th><th>日期</th><th>时段</th><th>状态</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+      `;
+    },
+    adminCheckins(){
+      const rows=getUnifiedAdminReservations();
+      App.util.qs("#admin-checkins").innerHTML=`
+        <div class="card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+            <h3 style="margin:0">签到管理</h3>
+            <button class="btn btn-primary" onclick="mockScanStudentQr()">扫码示意</button>
+          </div>
+          <div class="muted" style="margin-top:8px">此处为扫码签到示意，不接入真实 CV 系统。</div>
+          <div class="qr-box" style="width:220px;height:220px;margin-top:12px">
+            <div style="text-align:center">
+              <div style="font-size:48px">📷</div>
+              <div class="muted">扫码框示意区域</div>
+            </div>
+          </div>
+          <div class="admin-table-wrap" style="margin-top:12px">
+            <table class="admin-table">
+              <thead><tr><th>学号</th><th>姓名</th><th>自习室</th><th>座位</th><th>状态</th></tr></thead>
+              <tbody>
+                ${rows.map(r=>`<tr><td>${r.sid}</td><td>${r.name}</td><td>${r.room}</td><td>${r.seat}</td><td>${r.status}</td></tr>`).join("")}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    },
+    adminAnnouncements(){
+      App.util.qs("#admin-announcements").innerHTML=App.data.announcements.map((item,index)=>`
+        <div class="card" style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+            <div>
+              <div style="font-size:16px;font-weight:900">${item.title}</div>
+              <div class="muted" style="margin-top:4px">📅 ${item.date} · 👀 ${item.views||0} 次浏览 · ${item.type||"系统通知"}</div>
+              <div class="muted" style="margin-top:6px">${item.content||""}</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-primary" style="padding:6px 10px" onclick="openAnnouncementEditor(${index})">编辑</button>
+              <button class="btn btn-danger" style="padding:6px 10px" onclick="deleteAnnouncement(${index})">删除</button>
+            </div>
+          </div>
+        </div>
+      `).join("");
+    },
+    adminStatistics(){
+      const usageActive=App.state.adminStatsTab==="usage"?"active":"";
+      const peakActive=App.state.adminStatsTab==="peak"?"active":"";
+      const ratioActive=App.state.adminStatsTab==="ratio"?"active":"";
+      const analytics=getAdminAnalytics(App.state.adminStatsPeriod,App.state.adminStatsTab);
+      const pMax=Math.max(...analytics.values,1);
+      const pieColors=["#4f6ef7","#00b894","#6c5ce7","#f6c453","#60a5fa"];
+      App.util.qs("#admin-statistics").innerHTML=`
+        <div class="admin-head-actions">
+          <h3 style="margin:0">统计分析</h3>
+          <button class="btn btn-primary" onclick="exportAdminReport()">导出报表</button>
+        </div>
+        <div class="period-tabs" style="margin-bottom:10px">
+          <button class="${App.state.adminStatsPeriod==="day"?"active":""}" onclick="setAdminStatsPeriod('day')">日报</button>
+          <button class="${App.state.adminStatsPeriod==="week"?"active":""}" onclick="setAdminStatsPeriod('week')">周报</button>
+          <button class="${App.state.adminStatsPeriod==="month"?"active":""}" onclick="setAdminStatsPeriod('month')">月报</button>
+        </div>
+        <div class="stats-tabs">
+          <button class="${usageActive}" onclick="setAdminStatsTab('usage')">使用统计</button>
+          <button class="${peakActive}" onclick="setAdminStatsTab('peak')">高峰分析</button>
+          <button class="${ratioActive}" onclick="setAdminStatsTab('ratio')">自习室使用占比</button>
+        </div>
+        <div class="admin-dashboard-grid">
+          <div class="stat-card"><div class="muted">总预约</div><div class="num">${analytics.totalReserve}</div></div>
+          <div class="stat-card"><div class="muted">总学习时长</div><div class="num">${analytics.totalStudyHours}h</div></div>
+          <div class="stat-card"><div class="muted">签到率</div><div class="num">${analytics.checkinRate}%</div></div>
+          <div class="stat-card"><div class="muted">平均信用分</div><div class="num">${analytics.avgCredit}</div></div>
+        </div>
+        <div class="card">
+          <div style="font-weight:800;margin-bottom:8px">${analytics.chartTitle}</div>
+          <div class="bar-chart">
+            ${analytics.values.map(v=>`<div class="bar" style="height:${Math.max(12,(v/pMax)*100)}%"></div>`).join("")}
+          </div>
+          <div class="muted" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${analytics.labels.map((lb,i)=>`<span>${lb}:${analytics.values[i]}</span>`).join("")}</div>
+        </div>
+        <div class="card">
+          <div style="font-weight:800;margin-bottom:10px">自习室使用占比</div>
+          <div class="pie-wrap">
+            <div class="pie-chart" style="background:conic-gradient(
+              ${pieColors[0]} 0 ${analytics.roomPercents[0]||0}%,
+              ${pieColors[1]} ${analytics.roomPercents[0]||0}% ${(analytics.roomPercents[0]||0)+(analytics.roomPercents[1]||0)}%,
+              ${pieColors[2]} ${(analytics.roomPercents[0]||0)+(analytics.roomPercents[1]||0)}% ${(analytics.roomPercents[0]||0)+(analytics.roomPercents[1]||0)+(analytics.roomPercents[2]||0)}%,
+              ${pieColors[3]} ${(analytics.roomPercents[0]||0)+(analytics.roomPercents[1]||0)+(analytics.roomPercents[2]||0)}% ${(analytics.roomPercents[0]||0)+(analytics.roomPercents[1]||0)+(analytics.roomPercents[2]||0)+(analytics.roomPercents[3]||0)}%,
+              ${pieColors[4]} ${(analytics.roomPercents[0]||0)+(analytics.roomPercents[1]||0)+(analytics.roomPercents[2]||0)+(analytics.roomPercents[3]||0)}% 100%
+            )"></div>
+            <div class="pie-legend">
+              ${analytics.roomUsage.map((r,i)=>`<span><i style="background:${pieColors[i%pieColors.length]}"></i>${r.name} ${analytics.roomPercents[i]||0}%</span>`).join("")}
+            </div>
+          </div>
+        </div>
+      `;
+    },
+    adminSettings(){
+      const current=getCurrentAdminAccount();
+      const rows=App.data.adminAccounts.map(admin=>{
+        const rooms=admin.role==="super"
+          ? App.data.rooms.map(r=>r.name)
+          : App.data.rooms.filter(r=>r.managerId===admin.managerId).map(r=>r.name);
+        const manager=getManagerById(admin.managerId);
+        return `
+          <tr>
+            <td>${admin.id}</td>
+            <td>${admin.name}</td>
+            <td>${admin.role==="super"?"超级管理员":"普通管理员"}</td>
+            <td>${manager?manager.name:"-"}</td>
+            <td>${rooms.length?rooms.join("、"):"无"}</td>
+          </tr>
+        `;
+      }).join("");
+      App.util.qs("#admin-settings").innerHTML=`
+        <div class="card">
+          <div class="admin-head-actions">
+            <h3 style="margin:0">管理设置</h3>
+            <div class="mini-badge active">当前登录：${current?`${current.name}（${current.role==="super"?"超级管理员":"普通管理员"}）`:"未登录"}</div>
+          </div>
+          <div class="muted" style="margin-bottom:10px">权限规则：普通管理员仅可编辑自己作为“负责人”的自习室；超级管理员可新增/编辑/删除全部自习室。</div>
+          <div class="admin-table-wrap">
+            <table class="admin-table">
+              <thead><tr><th>管理员账号</th><th>姓名</th><th>角色</th><th>负责人映射</th><th>可管理自习室</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+  },
+  action:{
+    switchDevice(device){
+      App.debug.assert(["mobile","desktop"].includes(device),"非法设备模式",{device});
+      App.state.device=device;
+      App.util.mustQS("#device-frame","设备容器").className=device;
+      if(App.state.role==="admin"){
+        App.debug.checkpoint("admin.mobile.deviceSwitch",{device});
+      }
+      App.render.toggleButtons();
+    },
+    switchRole(role){
+      App.debug.assert(["student","admin"].includes(role),"非法角色类型",{role});
+      App.state.role=role;
+      if(role==="admin"){
+        App.debug.checkpoint("admin.mobile.roleSwitch",{device:App.state.device});
+      }
+      App.util.mustQS("#device-frame","设备容器").className=App.state.device;
+      App.render.toggleButtons();
+      App.render.roleRoot();
+    },
+    openPage(page,skipHistory){
+      const validPages=["login","home","reservation","checkin","notifications","profile","myres","credit","stats","settings"];
+      App.debug.assert(validPages.includes(page),"非法页面跳转",{page});
+      if(page!=="login"&&!App.guard.student()) return;
+      if(!skipHistory&&App.state.studentPage!==page) App.state.studentHistory.push(App.state.studentPage);
+      App.state.studentPage=page;
+      App.util.qsa("#student-app .page").forEach(p=>p.classList.remove("active"));
+      const el=App.util.mustQS("#page-"+page,`学生页 ${page}`); el.classList.add("active");
+      App.debug.checkpoint("action.openPage",{page,skipHistory:!!skipHistory});
+      App.render.studentBottom();
+      if(page==="home") App.render.home();
+      if(page==="notifications") App.render.notifications();
+      if(page==="reservation") App.render.reservation();
+      if(page==="checkin") App.render.checkin();
+      if(page==="profile") App.render.profile();
+      if(page==="myres") App.render.myReservations();
+      if(page==="credit") App.render.credit();
+      if(page==="stats") App.render.stats();
+      if(page==="settings") App.render.settings();
+    },
+    goBack(fallback){
+      const prev=App.state.studentHistory.pop();
+      App.action.openPage(prev||fallback,true);
+    },
+    showAdminPage(page){
+      const validPages=["login","home"];
+      App.debug.assert(validPages.includes(page),"非法管理页跳转",{page});
+      App.util.qsa("#admin-app .page").forEach(p=>p.classList.remove("active"));
+      const el=App.util.mustQS("#page-admin-"+page,`管理页 ${page}`); el.classList.add("active");
+      App.debug.checkpoint("action.showAdminPage",{page});
+    }
+  },
+  init(){
+    App.debug.bindGlobalHandlers();
+    App.debug.checkpoint("init:start");
+    loadDataPool();
+    normalizeDomainData();
+    saveDataPool();
+    mountModalHost();
+    refreshRoomAvailability();
+    App.render.toggleButtons();
+    App.render.roleRoot();
+    App.render.adminDashboard();
+    App.render.adminRooms();
+    App.render.adminUsers();
+    App.render.adminSeats();
+    App.render.adminReservations();
+    App.render.adminCheckins();
+    App.render.adminAnnouncements();
+    App.render.adminStatistics();
+    App.render.adminSettings();
+    App.debug.checkpoint("admin.mobile.layout.ready",{
+      mobileNav:!!App.util.qs(".admin-mobile-nav"),
+      mobileTabs:App.util.qsa(".admin-mobile-tab").length
+    });
+    const result=App.debug.smokeTest();
+    if(result&&result.ok){
+      App.debug.checkpoint("init:smokeTestPass",result);
+    }
+  }
+};
+
+function switchDevice(d){ return App.debug.run("switchDevice",()=>App.action.switchDevice(d),{payload:{device:d}}); }
+function switchRole(r){ return App.debug.run("switchRole",()=>App.action.switchRole(r),{payload:{role:r}}); }
+function handleStudentLogin(){
+  return App.debug.run("handleStudentLogin",()=>{
+    const id=App.util.mustQS("#loginId","学生登录账号").value.trim();
+    const pwd=App.util.mustQS("#loginPwd","学生登录密码").value.trim();
+    if(!id||!pwd){App.util.toast("请输入账号和密码");return}
+    const account=App.data.accounts.find(x=>x.id===id&&x.password===pwd);
+    if(!account){App.util.toast("账号或密码错误");return}
+    const user=App.data.users.find(x=>x.id===id);
+    if(user){
+      App.data.user=Object.assign({},App.data.user,user);
+    }
+    App.state.studentLogged=true; App.state.adminLogged=false; App.state.studentHistory=[];
+    App.util.toast("登录成功");
+    App.action.openPage("home",true);
+  });
+}
+function studentLogout(){
+  return App.debug.run("studentLogout",()=>{
+    App.state.studentLogged=false; App.state.studentHistory=[]; App.state.checkinState="pending";
+    clearInterval(App.state.timers.study); clearInterval(App.state.timers.away);
+    App.util.toast("已退出登录");
+    App.action.openPage("login",true);
+  });
+}
+function studentTab(page){ return App.debug.run("studentTab",()=>App.action.openPage(page),{payload:{page}}); }
+function openPage(page){ return App.debug.run("openPage",()=>App.action.openPage(page),{payload:{page}}); }
+function goBack(fallback){ return App.debug.run("goBack",()=>App.action.goBack(fallback),{payload:{fallback}}); }
+function openNotifications(){ return App.debug.run("openNotifications",()=>App.action.openPage("notifications")); }
+function readNotification(id){
+  return App.debug.run("readNotification",()=>{
+    App.debug.assert(Number.isInteger(id),"通知 ID 非法",{id});
+    const item=App.data.notifications.find(n=>n.id===id);
+    if(item) item.unread=false;
+    App.render.notifications();
+  },{payload:{id}});
+}
+function markAllRead(){
+  return App.debug.run("markAllRead",()=>{
+    App.data.notifications.forEach(n=>n.unread=false);
+    App.render.notifications();
+    App.util.toast("已全部标记为已读");
+  });
+}
+function renderSeats(){
+  return App.debug.run("renderSeats",()=>{
+    App.state.selectedRoom=parseInt(App.util.mustQS("#roomSelect","自习室选择").value,10)||0;
+    App.state.selectedSeat=null;
+    App.render.seats();
+  });
+}
+function setReservationDate(offset){
+  return App.debug.run("setReservationDate",()=>{
+    const n=parseInt(offset,10);
+    App.debug.assert(Number.isInteger(n)&&n>=0&&n<=6,"预约日期偏移非法",{offset});
+    App.state.reservationDateOffset=n;
+    App.render.reservation();
+  },{payload:{offset}});
+}
+function toggleSeatFilter(filter){
+  return App.debug.run("toggleSeatFilter",()=>{
+    App.debug.assert(["all","power","window","quiet","hot"].includes(filter),"非法座位筛选条件",{filter});
+    App.state.seatFilter=filter;
+    App.util.qsa(".filter-chip").forEach(chip=>{
+      chip.classList.toggle("active",chip.getAttribute("data-seat-filter")===filter);
+    });
+    App.state.selectedSeat=null;
+    App.render.seats();
+  },{payload:{filter}});
+}
+function setQuickTime(start,end){
+  return App.debug.run("setQuickTime",()=>{
+    App.util.mustQS("#startTime","开始时间").value=start;
+    App.util.mustQS("#endTime","结束时间").value=end;
+    App.state.quickTime=`${start}-${end}`;
+    App.util.qsa(".time-chip").forEach(chip=>{
+      chip.classList.toggle("active",chip.textContent.trim()===`${start}-${end}`);
+    });
+    App.debug.checkpoint("reservation.quickTime",{start,end});
+    App.util.toast(`已选择时段 ${start}-${end}`);
+  },{payload:{start,end}});
+}
+function setMyResFilter(filter){
+  return App.debug.run("setMyResFilter",()=>{
+    App.debug.assert(["all","pending","active","ended","cancelled"].includes(filter),"非法预约筛选",{filter});
+    App.state.myResFilter=filter;
+    App.render.myReservations();
+  },{payload:{filter}});
+}
+function refreshRoomAvailability(){
+  App.data.rooms.forEach(room=>{
+    const totalSeatCells=Array.isArray(room.seatMap)&&room.seatMap.length>0
+      ? room.seatMap.filter(isSeatCellType).length
+      : room.seats;
+    const occupied=App.data.reservations.filter(r=>String(r.roomId)===String(room.id)&&["pending","active","away"].includes(r.status)).length;
+    room.available=Math.max(0,totalSeatCells-occupied);
+  });
+}
+function parseHoursFromRange(range){
+  if(!range||!range.includes("-")) return 0;
+  const [start,end]=range.split("-");
+  const [sh,sm]=start.split(":").map(Number);
+  const [eh,em]=end.split(":").map(Number);
+  const startM=(Number.isFinite(sh)?sh:0)*60+(Number.isFinite(sm)?sm:0);
+  const endM=(Number.isFinite(eh)?eh:0)*60+(Number.isFinite(em)?em:0);
+  return Math.max(0,(endM-startM)/60);
+}
+function getAdminReservationRecords(){
+  const fromStudent=App.data.reservations.map(r=>({
+    roomId:r.roomId,room:getRoomNameById(r.roomId)||r.room,date:r.date,time:r.time,status:r.status
+  }));
+  const mapStatus=(status)=>{
+    if(status==="使用中") return "active";
+    if(status==="待使用") return "pending";
+    if(status==="已完成") return "done";
+    return "pending";
+  };
+  const fromAdmin=App.data.adminReservations.map(r=>({
+    roomId:r.roomId,room:getRoomNameById(r.roomId)||r.room,date:r.date,time:r.time,status:mapStatus(r.status)
+  }));
+  return [...fromStudent,...fromAdmin].filter(r=>r.room&&r.date&&r.time);
+}
+function toAdminStatusLabel(status){
+  if(status==="active") return "使用中";
+  if(status==="pending") return "待使用";
+  if(status==="done") return "已完成";
+  if(status==="away") return "暂离中";
+  if(status==="cancelled") return "已取消";
+  if(status==="violation") return "违约";
+  return status||"待使用";
+}
+function toAdminStatusClass(label){
+  if(label==="使用中") return "active";
+  if(label==="待使用") return "pending";
+  return "done";
+}
+function getUnifiedAdminReservations(){
+  const fromStudent=App.data.reservations.map(r=>{
+    const user=App.data.users.find(u=>u.id===r.sid);
+    const roomName=getRoomNameById(r.roomId)||r.room;
+    const statusLabel=toAdminStatusLabel(r.status);
+    return {
+      id:String(r.id),
+      sid:r.sid||"-",
+      name:user?user.name:"未知用户",
+      roomId:r.roomId,
+      room:roomName,
+      seat:r.seat||"-",
+      date:r.date||"-",
+      time:r.time||"-",
+      status:statusLabel,
+      statusClass:toAdminStatusClass(statusLabel)
+    };
+  });
+  const fromAdmin=App.data.adminReservations.map(r=>{
+    const statusLabel=r.status||"待使用";
+    return {
+      id:String(r.id),
+      sid:r.sid||"-",
+      name:r.name||"未知用户",
+      roomId:r.roomId,
+      room:getRoomNameById(r.roomId)||r.room||"-",
+      seat:r.seat||"-",
+      date:r.date||"-",
+      time:r.time||"-",
+      status:statusLabel,
+      statusClass:toAdminStatusClass(statusLabel)
+    };
+  });
+  const merged=[...fromStudent,...fromAdmin];
+  return merged.sort((a,b)=>`${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`));
+}
+function getAdminAnalytics(period,tab){
+  const records=getAdminReservationRecords();
+  const now=new Date();
+  const today=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  let rangeStart=new Date(today), rangeEnd=new Date(today);
+  if(period==="day"){
+    rangeEnd.setDate(rangeEnd.getDate()+1);
+  }else if(period==="week"){
+    rangeStart.setDate(rangeStart.getDate()-6);
+    rangeEnd.setDate(rangeEnd.getDate()+1);
+  }else{
+    rangeStart.setDate(rangeStart.getDate()-29);
+    rangeEnd.setDate(rangeEnd.getDate()+1);
+  }
+  const inRange=(dateStr)=>{
+    const d=new Date(`${dateStr}T00:00:00`);
+    return Number.isFinite(d.getTime())&&d>=rangeStart&&d<rangeEnd;
+  };
+  const filtered=records.filter(r=>inRange(r.date));
+  const totalSeats=Math.max(1,App.data.rooms.reduce((sum,r)=>sum+r.seats,0));
+  let labels=[],values=[],chartTitle="";
+  if(tab==="ratio"){
+    const roomCounts=App.data.rooms.map(r=>{
+      const count=filtered.filter(x=>String(x.roomId)===String(r.id)).length;
+      return {name:r.name,count};
+    });
+    const total=Math.max(1,roomCounts.reduce((s,x)=>s+x.count,0));
+    labels=roomCounts.map(x=>x.name);
+    values=roomCounts.map(x=>Math.round((x.count/total)*100));
+    chartTitle="各自习室预约占比（%）";
+  }else if(period==="day"){
+    labels=["6时","8时","10时","12时","14时","16时","18时","20时","22时"];
+    const bucket=new Array(labels.length).fill(0);
+    filtered.forEach(r=>{
+      const h=parseInt((r.time||"").split("-")[0],10);
+      const idx=Number.isFinite(h)?Math.max(0,Math.min(labels.length-1,Math.floor((h-6)/2))):0;
+      bucket[idx]+=1;
+    });
+    values=tab==="peak"?bucket.map(v=>Math.min(100,Math.round(v/totalSeats*100))):bucket;
+    chartTitle=tab==="peak"?"各时段座位使用率（%）":"各时段预约量";
+  }else if(period==="week"){
+    labels=Array.from({length:7}).map((_,i)=>{
+      const d=new Date(today); d.setDate(today.getDate()-6+i);
+      return `${d.getMonth()+1}/${d.getDate()}`;
+    });
+    const bucket=new Array(7).fill(0);
+    filtered.forEach(r=>{
+      const d=new Date(`${r.date}T00:00:00`);
+      const idx=Math.floor((d-rangeStart)/(24*3600*1000));
+      if(idx>=0&&idx<7) bucket[idx]+=1;
+    });
+    values=tab==="peak"?bucket.map(v=>Math.min(100,Math.round(v/totalSeats*100))):bucket;
+    chartTitle=tab==="peak"?"本周每日座位使用率（%）":"本周每日预约量";
+  }else{
+    labels=["第1周","第2周","第3周","第4周","第5周"];
+    const bucket=new Array(5).fill(0);
+    filtered.forEach(r=>{
+      const d=new Date(`${r.date}T00:00:00`);
+      const dayIndex=Math.floor((d-rangeStart)/(24*3600*1000));
+      const idx=Math.max(0,Math.min(4,Math.floor(dayIndex/7)));
+      bucket[idx]+=1;
+    });
+    values=tab==="peak"?bucket.map(v=>Math.min(100,Math.round(v/totalSeats*100))):bucket;
+    chartTitle=tab==="peak"?"本月每周座位使用率（%）":"本月每周预约量";
+  }
+  const totalReserve=filtered.length;
+  const totalStudyHours=filtered.reduce((sum,r)=>sum+parseHoursFromRange(r.time),0);
+  const finished=filtered.filter(r=>["done","active"].includes(r.status)).length;
+  const checkinRate=totalReserve?Math.round(finished/totalReserve*100):0;
+  const avgCredit=Math.round(App.data.users.reduce((sum,u)=>sum+(u.credit||0),0)/Math.max(1,App.data.users.length));
+  const roomUsage=App.data.rooms.map(r=>{
+    const count=filtered.filter(x=>String(x.roomId)===String(r.id)).length;
+    return {name:r.name,count};
+  });
+  const roomTotal=Math.max(1,roomUsage.reduce((s,x)=>s+x.count,0));
+  const roomPercents=roomUsage.map(x=>Math.round(x.count/roomTotal*100));
+  return {
+    labels,values,chartTitle,totalReserve,totalStudyHours:Math.round(totalStudyHours*10)/10,checkinRate,avgCredit,roomUsage,roomPercents
+  };
+}
+function getCellTypeOptions(customTypes=[]){
+  const builtins=[
+    {category:"座位类",name:"普通座位"},
+    {category:"座位类",name:"电源"},
+    {category:"座位类",name:"靠窗"},
+    {category:"座位类",name:"静音"},
+    {category:"非座位类",name:"过道"},
+    {category:"非座位类",name:"墙壁"}
+  ];
+  const merged=[...builtins,...customTypes.filter(x=>x&&x.category&&x.name)];
+  const seen=new Set();
+  return merged.filter(item=>{
+    const key=`${item.category}:${item.name}`;
+    if(seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map(item=>`${item.category}:${item.name}`);
+}
+/* ========================= 管理端统一数据池（管理员-负责人-自习室） =========================
+ * 目标：
+ * 1) 负责人仅以 managerId 作为主键，避免字符串同名/改名导致权限错乱；
+ * 2) 管理员权限仅基于 managerId 关联判断；
+ * 3) 页面展示统一走同一读取链路，禁止各页面各自拼接“负责人”文本。
+ * 示例流程：
+ * 管理员登录 -> adminCurrentId -> adminAccounts.managerId -> 可管理 rooms(managerId) -> 页面渲染与保存。
+ * =========================================================================================== */
+function getCurrentAdminAccount(){
+  return App.data.adminAccounts.find(a=>a.id===App.state.adminCurrentId)||null;
+}
+function getManagerById(managerId){
+  return App.data.managers.find(m=>m.id===managerId)||null;
+}
+function getRoomManager(room){
+  const byId=getManagerById(room&&room.managerId);
+  if(byId) return byId;
+  const byName=App.data.managers.find(m=>m.name===String((room&&room.manager)||"").trim());
+  return byName||null;
+}
+function getRoomManagerName(room){
+  const manager=getRoomManager(room);
+  return manager?manager.name:(room&&room.manager)||"未设置";
+}
+function syncRoomManagerField(room){
+  if(!room) return;
+  const manager=getRoomManager(room);
+  if(manager){
+    room.managerId=manager.id;
+    room.manager=manager.name;
+  }else{
+    room.managerId="";
+    room.manager=String(room.manager||"").trim();
+  }
+}
+/* 统一关系修复：
+ * 1) 自习室负责人统一为 managerId（同时回填 manager 文本用于兼容旧渲染）
+ * 2) 管理员账号统一绑定 managerId（normal 必须绑定）
+ */
+function normalizeAdminRoomData(){
+  App.data.rooms.forEach(room=>syncRoomManagerField(room));
+  App.data.adminAccounts.forEach(admin=>{
+    if(admin.role==="super"){
+      if(!admin.managerId) admin.managerId="m-super";
+      return;
+    }
+    const byId=getManagerById(admin.managerId);
+    if(byId) return;
+    const legacy=App.data.managers.find(m=>m.name===String(admin.managerName||admin.name||"").trim());
+    if(legacy){
+      admin.managerId=legacy.id;
+    }else{
+      admin.managerId="";
+    }
+  });
+}
+function getCurrentUserId(){
+  return String((App.data.user&&App.data.user.id)||"").trim();
+}
+function getRoomById(roomId){
+  return App.data.rooms.find(r=>String(r.id)===String(roomId))||null;
+}
+function getRoomByName(roomName){
+  return App.data.rooms.find(r=>String(r.name||"").trim()===String(roomName||"").trim())||null;
+}
+function getRoomNameById(roomId){
+  const room=getRoomById(roomId);
+  return room?room.name:"";
+}
+function normalizeReservationRecord(record){
+  if(!record) return;
+  const byId=record.roomId?getRoomById(record.roomId):null;
+  const byName=!byId?getRoomByName(record.room):null;
+  const room=byId||byName;
+  if(room){
+    record.roomId=room.id;
+    record.room=room.name;
+  }else{
+    record.roomId=record.roomId||"";
+  }
+  if(!record.sid) record.sid=getCurrentUserId()||"202301010101";
+}
+function normalizeDomainData(){
+  normalizeAdminRoomData();
+  App.data.rooms.forEach(room=>{
+    if(typeof room.layoutImage!=="string") room.layoutImage="";
+  });
+  App.data.reservations.forEach(normalizeReservationRecord);
+  App.data.adminReservations.forEach(item=>{
+    const room=getRoomByName(item.room)||getRoomById(item.roomId);
+    if(room){
+      item.roomId=room.id;
+      item.room=room.name;
+    }
+  });
+}
+function getReservationsByUser(userId){
+  const uid=String(userId||"").trim();
+  return App.data.reservations.filter(r=>String(r.sid||"").trim()===uid);
+}
+function getCurrentUserReservations(){
+  return getReservationsByUser(getCurrentUserId());
+}
+function getCurrentActiveReservation(){
+  return getCurrentUserReservations().find(r=>["pending","active","away"].includes(r.status))||null;
+}
+function isSuperAdmin(){
+  const admin=getCurrentAdminAccount();
+  return !!admin&&admin.role==="super";
+}
+function getCurrentAdminManager(){
+  const admin=getCurrentAdminAccount();
+  return admin?getManagerById(admin.managerId):null;
+}
+function getManageableRooms(){
+  const admin=getCurrentAdminAccount();
+  if(!admin) return [];
+  if(admin.role==="super") return App.data.rooms;
+  return App.data.rooms.filter(r=>r.managerId===admin.managerId);
+}
+function canManageRoom(room){
+  if(!room) return false;
+  if(isSuperAdmin()) return true;
+  const admin=getCurrentAdminAccount();
+  return !!admin&&room.managerId===admin.managerId;
+}
+function isSeatCellType(typeValue){
+  const parsed=parseCellTypeValue(typeValue);
+  return parsed.category==="座位类";
+}
+function splitCellType(typeValue){
+  const parsed=parseCellTypeValue(typeValue);
+  return {category:parsed.category,name:parsed.names[0]||"普通座位"};
+}
+function parseCellTypeValue(typeValue){
+  const raw=String(typeValue||"座位类:普通座位");
+  const [rawCategory,rawNames]=raw.split(":");
+  const category=(rawCategory||"座位类").trim();
+  const names=(rawNames||"普通座位").split("+").map(x=>x.trim()).filter(Boolean);
+  return {category,names:names.length?names:["普通座位"]};
+}
+function buildCellTypeValue(category,names){
+  const safeCategory=(category||"座位类").trim();
+  const list=(Array.isArray(names)?names:[]).map(x=>String(x||"").trim()).filter(Boolean);
+  const unique=Array.from(new Set(list));
+  return `${safeCategory}:${(unique.length?unique:["普通座位"]).join("+")}`;
+}
+function getCellTypeLabel(typeValue){
+  const parsed=parseCellTypeValue(typeValue);
+  return parsed.names.join(" + ");
+}
+function getSubTypesByCategory(category,customTypes=[]){
+  return getCellTypeOptions(customTypes)
+    .filter(x=>x.startsWith(`${category}:`))
+    .map(x=>x.split(":")[1]);
+}
+function saveDataPool(){
+  try{
+    const payload=JSON.stringify(App.data);
+    localStorage.setItem(DATA_POOL_KEY,payload);
+    return true;
+  }catch(error){
+    console.warn("[DATA_POOL] 保存失败",error);
+    return false;
+  }
+}
+function loadDataPool(){
+  try{
+    const raw=localStorage.getItem(DATA_POOL_KEY);
+    if(!raw) return false;
+    const parsed=JSON.parse(raw);
+    if(!parsed||typeof parsed!=="object") return false;
+    Object.keys(parsed).forEach(key=>{
+      App.data[key]=parsed[key];
+    });
+    App.debug.checkpoint("dataPool.loaded",{keys:Object.keys(parsed).length});
+    return true;
+  }catch(error){
+    console.warn("[DATA_POOL] 加载失败",error);
+    return false;
+  }
+}
+function resetDataPool(){
+  try{
+    localStorage.removeItem(DATA_POOL_KEY);
+    App.util.toast("本地数据池已清除，刷新后恢复默认");
+  }catch(error){
+    console.warn("[DATA_POOL] 清除失败",error);
+  }
+}
+function parseSubtypeListValue(value){
+  return String(value||"").split(",").map(x=>x.trim()).filter(Boolean);
+}
+function getSelectedSubtypes(selectId,label){
+  const options=App.util.qsa(`#${selectId} option:checked`);
+  const selected=options.map(x=>x.value).filter(Boolean);
+  App.debug.assert(selected.length>0,`${label}至少选择一个子类`);
+  return selected;
+}
+function mountModalHost(){
+  const host=App.util.qs("#app-container");
+  if(!host) return;
+  ["checkoutModal","qrModal","registerModal","genericModal"].forEach(id=>{
+    const el=App.util.qs(`#${id}`);
+    if(el&&el.parentElement!==host){
+      host.appendChild(el);
+    }
+  });
+}
+function reserveSeat(index){
+  return App.debug.run("reserveSeat",()=>{
+    App.debug.assert(Number.isInteger(index)&&index>=0,"座位索引非法",{index});
+    App.state.selectedSeat=index;
+    App.render.seats();
+    const room=App.data.rooms[App.state.selectedRoom];
+    App.debug.assert(!!room,"选中的自习室不存在",{selectedRoom:App.state.selectedRoom});
+    const cols=Math.max(1,parseInt(room.cols,10)||6);
+    const seat=`${String.fromCharCode(65+Math.floor(index/cols))}-${String(index+1).padStart(2,"0")}`;
+    const start=App.util.mustQS("#startTime","开始时间").value;
+    const end=App.util.mustQS("#endTime","结束时间").value;
+    const reserveDate=new Date();
+    reserveDate.setDate(reserveDate.getDate()+App.state.reservationDateOffset);
+    const dateStr=reserveDate.toISOString().slice(0,10);
+    const duplicated=App.data.reservations.some(r=>String(r.roomId)===String(room.id)&&r.seat===seat&&r.date===dateStr&&["pending","active","away"].includes(r.status));
+    App.debug.assert(!duplicated,"该座位当前时段已被占用",{seat,room:room.name});
+    App.state.pendingReservation={
+      id:Date.now(),
+      sid:getCurrentUserId(),
+      roomId:room.id,
+      room:room.name,
+      seat,date:dateStr,time:`${start}-${end}`,status:"pending"
+    };
+    App.util.mustQS("#genericModalBody","通用弹窗内容").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="modal-title">🪑 确认预约</div><button class="back" onclick="closeGenericModal()">✕</button></div>
+      <div class="card">
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>自习室</span><strong>${room.name}</strong></div>
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>座位</span><strong>${seat}</strong></div>
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>日期</span><strong>${dateStr}</strong></div>
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>时段</span><strong>${start}-${end}</strong></div>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:10px"><button class="btn btn-outline" onclick="cancelReserveConfirm()">取消</button><button class="btn btn-primary" onclick="confirmReserveSeat()">确认预约</button></div>
+    `;
+    App.util.mustQS("#genericModal","通用弹窗").classList.remove("hidden");
+  },{payload:{index}});
+}
+function confirmReserveSeat(){
+  return App.debug.run("confirmReserveSeat",()=>{
+    App.debug.assert(!!App.state.pendingReservation,"缺少待确认预约信息");
+    normalizeReservationRecord(App.state.pendingReservation);
+    App.data.reservations.unshift(App.state.pendingReservation);
+    App.state.pendingReservation=null;
+    closeGenericModal();
+    refreshRoomAvailability();
+    App.render.reservation();
+    App.util.toast("预约成功");
+  });
+}
+function cancelReserveConfirm(){
+  return App.debug.run("cancelReserveConfirm",()=>{
+    App.state.pendingReservation=null;
+    closeGenericModal();
+  });
+}
+function doCheckin(){
+  return App.debug.run("doCheckin",()=>{
+    App.state.checkinState="active";
+    clearInterval(App.state.timers.study);
+    clearInterval(App.state.timers.away);
+    App.state.timers.study=setInterval(()=>{App.state.studySec+=1;App.render.checkin();},1000);
+    const r=getCurrentUserReservations().find(x=>x.status==="pending");
+    if(r) r.status="active";
+    App.render.checkin();
+  });
+}
+function doAway(){
+  return App.debug.run("doAway",()=>{
+    App.state.checkinState="away";
+    App.state.awaySec=30*60;
+    clearInterval(App.state.timers.study); clearInterval(App.state.timers.away);
+    App.state.timers.away=setInterval(()=>{
+      App.state.awaySec-=1;
+      App.render.checkin();
+      if(App.state.awaySec<=0){
+        clearInterval(App.state.timers.away);
+        App.state.checkinState="ended";
+        const r=getCurrentUserReservations().find(x=>x.status==="active");
+        if(r) r.status="violation";
+        App.util.toast("暂离超时，已结束本次使用");
+        App.render.checkin();
+      }
+    },1000);
+    App.render.checkin();
+  });
+}
+function doReturn(){
+  return App.debug.run("doReturn",()=>{
+    App.state.checkinState="active";
+    clearInterval(App.state.timers.away);
+    clearInterval(App.state.timers.study);
+    App.state.timers.study=setInterval(()=>{App.state.studySec+=1;App.render.checkin();},1000);
+    App.render.checkin();
+  });
+}
+function doCheckout(){
+  return App.debug.run("doCheckout",()=>{
+    clearInterval(App.state.timers.study); clearInterval(App.state.timers.away);
+    App.state.checkinState="ended";
+    const r=getCurrentUserReservations().find(x=>x.status==="active");
+    if(r) r.status="done";
+    refreshRoomAvailability();
+    const duration=App.util.fmtSec(App.state.studySec);
+    App.util.mustQS("#sumRoom","签退汇总自习室").textContent=r?r.room:"图书馆一楼A区";
+    App.util.mustQS("#sumSeat","签退汇总座位").textContent=r?r.seat:"A-12";
+    App.util.mustQS("#sumDuration","签退汇总时长").textContent=duration;
+    App.util.mustQS("#checkoutModal","签退弹窗").classList.remove("hidden");
+    App.data.user.credit=(App.data.user.credit||280)+5;
+    App.render.checkin();
+  });
+}
+function closeCheckoutModal(){
+  return App.debug.run("closeCheckoutModal",()=>{
+    App.util.mustQS("#checkoutModal","签退弹窗").classList.add("hidden");
+  });
+}
+function showQrCheckin(){
+  return App.debug.run("showQrCheckin",()=>{
+    const modal=App.util.mustQS("#qrModal","二维码弹窗");
+    scopeModalToFrame(modal);
+    modal.classList.remove("hidden");
+  });
+}
+function closeQrModal(){
+  return App.debug.run("closeQrModal",()=>{
+    App.util.mustQS("#qrModal","二维码弹窗").classList.add("hidden");
+  });
+}
+function scopeModalToFrame(modal){
+  const frame=App.util.qs("#app-container");
+  if(!modal||!frame) return;
+  const registerCard=modal.querySelector(".register-card");
+  if(App.state.device==="mobile"){
+    const rect=frame.getBoundingClientRect();
+    Object.assign(modal.style,{
+      position:"fixed",
+      left:`${rect.left+6}px`,
+      top:`${rect.top+6}px`,
+      width:`${Math.max(0,rect.width-12)}px`,
+      height:`${Math.max(0,rect.height-12)}px`,
+      inset:"auto"
+    });
+    if(registerCard){
+      registerCard.style.width=`${Math.max(250,rect.width-44)}px`;
+      registerCard.style.maxHeight=`${Math.max(340,rect.height-44)}px`;
+      registerCard.style.margin="0";
+    }
+  }else{
+    modal.style.position="";
+    modal.style.left="";
+    modal.style.top="";
+    modal.style.width="";
+    modal.style.height="";
+    modal.style.inset="";
+    if(registerCard){
+      registerCard.style.width="";
+      registerCard.style.maxHeight="";
+      registerCard.style.margin="";
+    }
+  }
+}
+function showRegisterModal(){
+  return App.debug.run("showRegisterModal",()=>{
+    const modal=App.util.mustQS("#registerModal","注册弹窗");
+    scopeModalToFrame(modal);
+    modal.classList.remove("hidden");
+  });
+}
+function closeRegisterModal(){
+  return App.debug.run("closeRegisterModal",()=>{
+    App.util.mustQS("#registerModal","注册弹窗").classList.add("hidden");
+  });
+}
+function closeGenericModal(){
+  return App.debug.run("closeGenericModal",()=>{
+    App.util.mustQS("#genericModal","通用弹窗").classList.add("hidden");
+  });
+}
+function openPersonalInfo(){
+  return App.debug.run("openPersonalInfo",()=>{
+    App.util.mustQS("#genericModalBody","通用弹窗内容").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="modal-title">📝 个人信息</div><button class="back" onclick="closeGenericModal()">✕</button></div>
+      <div class="card">
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>姓名</span><strong>${App.data.user.name}</strong></div>
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>学号</span><strong>${App.data.user.id}</strong></div>
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>性别</span><strong>${App.data.user.gender||"男"}</strong></div>
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>学院</span><strong>${App.data.user.college||"计算机科学与技术学院"}</strong></div>
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>专业</span><strong>${App.data.user.major||"软件工程"}</strong></div>
+      </div>
+      <button class="btn btn-primary" style="width:120px;float:right" onclick="closeGenericModal()">关闭</button>
+    `;
+    App.util.mustQS("#genericModal","通用弹窗").classList.remove("hidden");
+  });
+}
+function openChangePassword(){
+  return App.debug.run("openChangePassword",()=>{
+    App.util.mustQS("#genericModalBody","通用弹窗内容").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="modal-title">🔐 修改密码</div><button class="back" onclick="closeGenericModal()">✕</button></div>
+      <div class="field"><label>原密码</label><input id="oldPwd" type="password" class="input" placeholder="请输入原密码"></div>
+      <div class="field"><label>新密码</label><input id="newPwd" type="password" class="input" placeholder="6-20位，含字母和数字"></div>
+      <div class="field"><label>确认新密码</label><input id="newPwd2" type="password" class="input" placeholder="请再次输入新密码"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-outline" onclick="closeGenericModal()">取消</button><button class="btn btn-primary" onclick="submitPasswordChange()">确认修改</button></div>
+    `;
+    App.util.mustQS("#genericModal","通用弹窗").classList.remove("hidden");
+  });
+}
+function submitPasswordChange(){
+  return App.debug.run("submitPasswordChange",()=>{
+    const oldPwd=App.util.mustQS("#oldPwd","原密码").value.trim();
+    const p1=App.util.mustQS("#newPwd","新密码").value.trim();
+    const p2=App.util.mustQS("#newPwd2","确认新密码").value.trim();
+    App.debug.assert(oldPwd.length>0,"请输入原密码");
+    App.debug.assert(/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,20}$/.test(p1),"新密码需6-20位，且包含字母和数字");
+    App.debug.assert(p1===p2,"两次新密码不一致");
+    closeGenericModal();
+    App.util.toast("密码修改成功");
+  });
+}
+function openAbout(){
+  return App.debug.run("openAbout",()=>{
+    App.util.mustQS("#genericModalBody","通用弹窗内容").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="modal-title">ℹ️ 关于系统</div><button class="back" onclick="closeGenericModal()">✕</button></div>
+      <div style="text-align:center;font-size:54px">📚</div>
+      <div style="text-align:center;font-size:42px;font-weight:900">校园自习室预约管理系统</div>
+      <div style="text-align:center;font-size:34px;color:#64748b">版本 v2.0.0</div>
+      <div class="muted" style="text-align:center;margin:10px 0 14px">为高校自习室提供智能预约管理服务，帮助学生高效利用自习资源。</div>
+      <button class="btn btn-primary" style="width:120px;float:right" onclick="closeGenericModal()">确定</button>
+    `;
+    App.util.mustQS("#genericModal","通用弹窗").classList.remove("hidden");
+  });
+}
+function openRepairModal(){
+  return App.debug.run("openRepairModal",()=>{
+    App.util.mustQS("#genericModalBody","通用弹窗内容").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="modal-title">💬 问题反馈</div><button class="back" onclick="closeGenericModal()">✕</button></div>
+      <div class="field"><label>反馈内容</label><textarea id="repairReason" class="input" style="height:120px;padding:10px" placeholder="请输入你在签到/座位使用中遇到的问题"></textarea></div>
+      <div style="display:flex;justify-content:flex-end;gap:10px"><button class="btn btn-outline" onclick="closeGenericModal()">取消</button><button class="btn btn-primary" onclick="submitRepair()">提交反馈</button></div>
+    `;
+    const modal=App.util.mustQS("#genericModal","通用弹窗");
+    scopeModalToFrame(modal);
+    modal.classList.remove("hidden");
+  });
+}
+function submitRepair(){
+  return App.debug.run("submitRepair",()=>{
+    const reason=App.util.mustQS("#repairReason","报修理由").value.trim();
+    App.debug.assert(reason.length>=4,"请填写至少4个字的报修理由");
+    closeGenericModal();
+    App.util.toast("反馈已提交，管理员将尽快处理");
+  });
+}
+function openFeedbackModal(){
+  return App.debug.run("openFeedbackModal",()=>{
+    App.util.mustQS("#genericModalBody","通用弹窗内容").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="modal-title">💬 问题反馈</div><button class="back" onclick="closeGenericModal()">✕</button></div>
+      <div class="field"><label>反馈内容</label><textarea id="feedbackText" class="input" style="height:130px;padding:10px" placeholder="请输入你遇到的问题或建议"></textarea></div>
+      <div style="display:flex;justify-content:flex-end;gap:10px"><button class="btn btn-outline" onclick="closeGenericModal()">取消</button><button class="btn btn-primary" onclick="submitFeedback()">提交反馈</button></div>
+    `;
+    const modal=App.util.mustQS("#genericModal","通用弹窗");
+    scopeModalToFrame(modal);
+    modal.classList.remove("hidden");
+  });
+}
+function submitFeedback(){
+  return App.debug.run("submitFeedback",()=>{
+    const text=App.util.mustQS("#feedbackText","反馈内容").value.trim();
+    App.debug.assert(text.length>=4,"反馈内容至少4个字");
+    closeGenericModal();
+    App.util.toast("反馈已提交，感谢你的建议");
+  });
+}
+function setStatsPeriod(period){
+  return App.debug.run("setStatsPeriod",()=>{
+    App.debug.assert(["day","week","month"].includes(period),"非法统计周期",{period});
+    App.state.statsPeriod=period;
+    App.render.stats();
+  },{payload:{period}});
+}
+function toggleSetting(key){
+  return App.debug.run("toggleSetting",()=>{
+    App.debug.assert(Object.prototype.hasOwnProperty.call(App.state.settings,key),"非法设置项",{key});
+    App.state.settings[key]=!App.state.settings[key];
+    App.render.settings();
+  },{payload:{key}});
+}
+function submitRegister(){
+  return App.debug.run("submitRegister",()=>{
+    const id=App.util.mustQS("#regId","注册学号").value.trim();
+    const name=App.util.mustQS("#regName","注册姓名").value.trim();
+    const gender=App.util.mustQS("#regGender","注册性别").value.trim();
+    const college=App.util.mustQS("#regCollege","注册学院").value.trim();
+    const major=App.util.mustQS("#regMajor","注册专业").value.trim();
+    const grade=App.util.mustQS("#regGrade","注册年级").value.trim();
+    const phone=App.util.mustQS("#regPhone","注册手机号").value.trim();
+    const email=App.util.mustQS("#regEmail","注册邮箱").value.trim();
+    const identityFile=App.util.mustQS("#regIdentityFile","身份材料").files[0];
+    const pwd=App.util.mustQS("#regPwd","注册密码").value;
+    const pwd2=App.util.mustQS("#regPwd2","注册确认密码").value;
+    if(!/^\d{10,12}$/.test(id)){App.util.toast("学号格式错误，应为10-12位数字");return}
+    if(name.length<2){App.util.toast("姓名至少2个字符");return}
+    if(college.length<2){App.util.toast("学院名称不能为空");return}
+    if(major.length<2){App.util.toast("专业名称不能为空");return}
+    if(!/^1\d{10}$/.test(phone)){App.util.toast("手机号格式错误");return}
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){App.util.toast("邮箱格式错误");return}
+    if(!identityFile){App.util.toast("请上传身份材料");return}
+    if(!/^(?=.*[A-Za-z])(?=.*\d)[A-Za-z\d]{6,20}$/.test(pwd)){App.util.toast("密码需6-20位且包含字母和数字");return}
+    if(pwd!==pwd2){App.util.toast("两次密码不一致");return}
+    if(App.data.accounts.some(x=>x.id===id)){App.util.toast("该学号已注册");return}
+    App.data.accounts.push({id,password:pwd,name});
+    App.data.users.push({id,name,status:"正常",credit:300,college,major,gender,grade,phone,email});
+    App.data.user=Object.assign({},App.data.user,{id,name,gender,college,major,grade,phone,email,credit:300,status:"正常"});
+    App.util.mustQS("#loginId","登录学号").value=id;
+    App.util.mustQS("#loginPwd","登录密码").value=pwd;
+    closeRegisterModal();
+    App.util.toast("注册成功，请登录");
+  });
+}
+function cancelReservation(id){
+  return App.debug.run("cancelReservation",()=>{
+    const r=App.data.reservations.find(x=>x.id===id);
+    App.debug.assert(!!r,"预约记录不存在",{id});
+    App.debug.assert(String(r.sid||"")===getCurrentUserId(),"无权取消其他用户预约",{id,sid:r.sid});
+    r.status="cancelled";
+    refreshRoomAvailability();
+    App.render.myReservations();
+    App.util.toast("预约已取消");
+  },{payload:{id}});
+}
+function handleAdminLogin(){
+  return App.debug.run("handleAdminLogin",()=>{
+    const id=App.util.mustQS("#adminId","管理员账号").value.trim();
+    const pwd=App.util.mustQS("#adminPwd","管理员密码").value.trim();
+    if(!id||!pwd){App.util.toast("请输入管理员账号和密码");return}
+    const admin=App.data.adminAccounts.find(x=>x.id===id&&x.password===pwd);
+    if(!admin){App.util.toast("管理员账号或密码错误");return}
+    App.state.adminCurrentId=admin.id;
+    App.state.adminRoomFormVisible=false;
+    App.state.adminLogged=true; App.state.studentLogged=false;
+    App.action.showAdminPage("home");
+    if(admin.role==="normal"){
+      const manageable=getManageableRooms();
+      if(manageable.length>0){
+        App.state.adminSeatRoom=App.data.rooms.indexOf(manageable[0]);
+      }
+      App.debug.checkpoint("admin.mobile.permission.pass",{role:admin.role,manageableRooms:manageable.length});
+    }
+    App.render.adminRooms();
+    App.render.adminSeats();
+    App.render.adminSettings();
+    App.debug.checkpoint("admin.mobile.data.linked",{
+      adminId:admin.id,
+      section:App.state.adminSection,
+      device:App.state.device,
+      rooms:getManageableRooms().length
+    });
+    App.util.toast("管理员登录成功");
+  });
+}
+function adminLogout(){
+  return App.debug.run("adminLogout",()=>{
+    App.state.adminLogged=false;
+    App.state.adminCurrentId="";
+    App.state.adminRoomFormVisible=false;
+    App.action.showAdminPage("login");
+    App.util.toast("已退出管理端");
+  });
+}
+function openAdminSection(section){
+  return App.debug.run("openAdminSection",()=>{
+    if(!App.guard.admin()) return;
+    const sections=["dashboard","users","rooms","seats","reservations","checkins","announcements","statistics","settings"];
+    App.debug.assert(sections.includes(section),"管理端模块名非法",{section});
+    App.state.adminSection=section;
+    sections.forEach(s=>{
+      App.util.mustQS("#admin-"+s,`管理容器 ${s}`).classList.toggle("hidden",s!==section);
+      App.util.mustQS("#a-"+s,`管理标签 ${s}`).classList.toggle("active",s===section);
+      const mobileTab=App.util.qs("#am-"+s);
+      if(mobileTab) mobileTab.classList.toggle("active",s===section);
+    });
+    App.debug.checkpoint("admin.mobile.sectionSync",{section,device:App.state.device});
+    if(section==="settings") App.render.adminSettings();
+  },{payload:{section}});
+}
+function openAdminUserDetail(userId){
+  return App.debug.run("openAdminUserDetail",()=>{
+    const user=App.data.users.find(u=>u.id===userId);
+    App.debug.assert(!!user,"用户不存在",{userId});
+    const credit=user.credit||0;
+    App.util.mustQS("#genericModalBody","通用弹窗内容").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="modal-title">👤 用户详情</div><button class="back" onclick="closeGenericModal()">✕</button></div>
+      <div class="card">
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>学号</span><strong>${user.id}</strong></div>
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>姓名</span><strong>${user.name}</strong></div>
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>学院</span><strong>${user.college||"-"}</strong></div>
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>信用积分</span><strong style="color:#4f6ef7">${credit}</strong></div>
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>状态</span><strong>${user.status}</strong></div>
+        <div class="summary-row" style="display:flex;justify-content:space-between"><span>总预约</span><strong>${getReservationsByUser(user.id).length}次</strong></div>
+      </div>
+      <button class="btn btn-primary" style="width:120px;float:right" onclick="closeGenericModal()">关闭</button>
+    `;
+    App.util.mustQS("#genericModal","通用弹窗").classList.remove("hidden");
+  },{payload:{userId}});
+}
+function setAdminUserPage(page){
+  return App.debug.run("setAdminUserPage",()=>{
+    const p=parseInt(page,10);
+    const max=Math.max(1,Math.ceil(App.data.users.length/3));
+    App.debug.assert(Number.isInteger(p)&&p>=1&&p<=max,"分页参数非法",{page});
+    App.state.adminUserPage=p;
+    App.render.adminUsers();
+  },{payload:{page}});
+}
+function toggleAdminUserStatus(userId){
+  return App.debug.run("toggleAdminUserStatus",()=>{
+    const user=App.data.users.find(u=>u.id===userId);
+    App.debug.assert(!!user,"用户不存在",{userId});
+    user.status=user.status==="正常"?"禁用":"正常";
+    App.render.adminUsers();
+    App.util.toast(`用户状态已更新：${user.status}`);
+  },{payload:{userId}});
+}
+function openAnnouncementEditor(index){
+  return App.debug.run("openAnnouncementEditor",()=>{
+    const item=App.data.announcements[index];
+    App.debug.assert(!!item,"公告不存在",{index});
+    App.util.mustQS("#genericModalBody","通用弹窗内容").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="modal-title">📢 编辑公告</div><button class="back" onclick="closeGenericModal()">✕</button></div>
+      <div class="field"><label>公告标题</label><input id="annTitle" class="input" value="${item.title||""}"></div>
+      <div class="field"><label>公告内容</label><textarea id="annContent" class="input" style="height:140px;padding:10px">${item.content||""}</textarea></div>
+      <div class="field"><label>公告类型</label>
+        <select id="annType" class="input">
+          ${["系统通知","维护通知","活动通知"].map(t=>`<option value="${t}" ${item.type===t?"selected":""}>${t}</option>`).join("")}
+        </select>
+      </div>
+      <div class="setting-item" style="padding-left:0;padding-right:0"><span>置顶显示</span><div class="switch ${item.pinned?"on":""}" id="annPinnedSwitch" onclick="this.classList.toggle('on')"></div></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn btn-outline" onclick="closeGenericModal()">取消</button><button class="btn btn-primary" onclick="saveAnnouncement(${index})">发布</button></div>
+    `;
+    App.util.mustQS("#genericModal","通用弹窗").classList.remove("hidden");
+  },{payload:{index}});
+}
+function saveAnnouncement(index){
+  return App.debug.run("saveAnnouncement",()=>{
+    const item=App.data.announcements[index];
+    App.debug.assert(!!item,"公告不存在",{index});
+    const title=App.util.mustQS("#annTitle","公告标题").value.trim();
+    const content=App.util.mustQS("#annContent","公告内容").value.trim();
+    const type=App.util.mustQS("#annType","公告类型").value;
+    const pinned=App.util.mustQS("#annPinnedSwitch","置顶开关").classList.contains("on");
+    App.debug.assert(title.length>=2,"公告标题至少2个字符");
+    App.debug.assert(content.length>=10,"公告内容至少10个字符");
+    Object.assign(item,{title,content,type,pinned});
+    App.render.adminAnnouncements();
+    closeGenericModal();
+    App.util.toast("公告已更新");
+  },{payload:{index}});
+}
+function deleteAnnouncement(index){
+  return App.debug.run("deleteAnnouncement",()=>{
+    App.debug.assert(index>=0&&index<App.data.announcements.length,"公告索引非法",{index});
+    App.data.announcements.splice(index,1);
+    App.render.adminAnnouncements();
+    App.util.toast("公告已删除");
+  },{payload:{index}});
+}
+function setAdminStatsTab(tab){
+  return App.debug.run("setAdminStatsTab",()=>{
+    App.debug.assert(["usage","peak","ratio"].includes(tab),"统计标签非法",{tab});
+    App.state.adminStatsTab=tab;
+    App.render.adminStatistics();
+  },{payload:{tab}});
+}
+function setAdminStatsPeriod(period){
+  return App.debug.run("setAdminStatsPeriod",()=>{
+    App.debug.assert(["day","week","month"].includes(period),"管理端统计周期非法",{period});
+    App.state.adminStatsPeriod=period;
+    App.render.adminStatistics();
+  },{payload:{period}});
+}
+function toggleAdminSeatState(index){
+  return App.debug.run("toggleAdminSeatState",()=>{
+    App.debug.assert(Number.isInteger(index)&&index>=0,"非法座位索引",{index});
+    App.util.toast(`座位状态已切换：#${index+1}`);
+  },{payload:{index}});
+}
+/* 管理端：打开座位单元格性质弹窗
+ * 输入：单元格索引 index
+ * 输出：弹窗中可选择当前自习室允许的单元格类型
+ */
+function openAdminSeatCellTypeModal(index){
+  return App.debug.run("openAdminSeatCellTypeModal",()=>{
+    const idx=parseInt(index,10);
+    const room=App.data.rooms[App.state.adminSeatRoom];
+    App.debug.assert(!!room,"当前自习室不存在",{adminSeatRoom:App.state.adminSeatRoom});
+    App.debug.assert(canManageRoom(room),"无权限编辑该自习室单元格",{room:room.name});
+    App.debug.assert(Number.isInteger(idx)&&idx>=0,"单元格索引非法",{index});
+    const rows=Math.max(1,parseInt(room.rows,10)||4);
+    const cols=Math.max(1,parseInt(room.cols,10)||6);
+    const total=rows*cols;
+    App.debug.assert(idx<total,"单元格索引超界",{idx,total});
+    const map=Array.isArray(room.seatMap)?room.seatMap:[];
+    room.seatMap=Array.from({length:total}).map((_,i)=>map[i]||room.cellType||"座位类:普通座位");
+    const current=room.seatMap[idx];
+    const parsed=parseCellTypeValue(current);
+    App.state.editingCellIndex=idx;
+    App.state.editingCellContext="adminSeat";
+    App.util.mustQS("#genericModalBody","通用弹窗内容").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="modal-title">🧩 切换座位单元格性质</div><button class="back" onclick="closeGenericModal()">✕</button></div>
+      <div class="muted" style="margin-bottom:8px">${room.name} · R${Math.floor(idx/cols)+1}-C${(idx%cols)+1}</div>
+      <div class="field"><label>顶层分类</label><select id="adminSeatCategorySelect" class="input" onchange="renderAdminSeatSubtypeChooser()"><option ${parsed.category==="座位类"?"selected":""}>座位类</option><option ${parsed.category==="非座位类"?"selected":""}>非座位类</option></select></div>
+      <div class="field"><label>子类（同一顶层可多选）</label><div id="adminSeatSubtypeWrap"></div></div>
+      <div style="display:flex;justify-content:flex-end;gap:10px"><button class="btn btn-outline" onclick="closeGenericModal()">取消</button><button class="btn btn-primary" onclick="saveAdminSeatCellTypeModal()">确认</button></div>
+    `;
+    App.state.adminSeatModalSelectedNames=parsed.names.slice();
+    renderAdminSeatSubtypeChooser();
+    const modal=App.util.mustQS("#genericModal","通用弹窗");
+    scopeModalToFrame(modal);
+    modal.classList.remove("hidden");
+  },{payload:{index}});
+}
+function renderAdminSeatSubtypeChooser(){
+  return App.debug.run("renderAdminSeatSubtypeChooser",()=>{
+    const room=App.data.rooms[App.state.adminSeatRoom];
+    App.debug.assert(!!room,"当前自习室不存在",{adminSeatRoom:App.state.adminSeatRoom});
+    const category=App.util.mustQS("#adminSeatCategorySelect","管理端单元格顶层分类").value;
+    const selected=Array.isArray(App.state.adminSeatModalSelectedNames)?App.state.adminSeatModalSelectedNames:[];
+    const options=getSubTypesByCategory(category,room.customTypes||[]);
+    App.util.mustQS("#adminSeatSubtypeWrap","管理端单元格子类容器").innerHTML=options.map(name=>`
+      <label style="display:inline-flex;align-items:center;gap:6px;margin:0 8px 8px 0;padding:5px 8px;border:1px solid #dbe5ff;border-radius:8px;background:#f8fbff">
+        <input type="checkbox" name="adminSeatSubtype" value="${name}" ${selected.includes(name)?"checked":""}>
+        <span>${name}</span>
+      </label>
+    `).join("");
+  });
+}
+/* 管理端：保存座位单元格性质
+ * 输入：弹窗中选择的类型
+ * 输出：更新 room.seatMap 并刷新当前管理页面
+ */
+function saveAdminSeatCellTypeModal(){
+  return App.debug.run("saveAdminSeatCellTypeModal",()=>{
+    App.debug.assert(App.state.editingCellContext==="adminSeat","弹窗上下文错误",{context:App.state.editingCellContext});
+    const room=App.data.rooms[App.state.adminSeatRoom];
+    App.debug.assert(!!room,"当前自习室不存在",{adminSeatRoom:App.state.adminSeatRoom});
+    App.debug.assert(canManageRoom(room),"无权限编辑该自习室单元格",{room:room.name});
+    const idx=App.state.editingCellIndex;
+    App.debug.assert(Number.isInteger(idx)&&idx>=0,"未指定待编辑单元格",{idx});
+    const category=App.util.mustQS("#adminSeatCategorySelect","管理端单元格顶层分类").value;
+    const names=App.util.qsa('input[name="adminSeatSubtype"]:checked').map(el=>el.value);
+    App.debug.assert(names.length>0,"请至少选择一个子类");
+    const value=buildCellTypeValue(category,names);
+    room.seatMap=Array.isArray(room.seatMap)?room.seatMap:[];
+    room.seatMap[idx]=value;
+    App.state.editingCellIndex=-1;
+    App.state.editingCellContext="roomForm";
+    closeGenericModal();
+    refreshRoomAvailability();
+    App.render.adminSeats();
+    App.render.adminRooms();
+  });
+}
+function openRoomEditor(index){
+  return App.debug.run("openRoomEditor",()=>{
+    const r=App.data.rooms[index];
+    App.debug.assert(!!r,"编辑目标自习室不存在",{index});
+    App.debug.assert(canManageRoom(r),"无权限编辑该自习室",{room:r.name});
+    App.data.roomForm={
+      editIndex:index,
+      name:r.name,
+      location:r.location,
+      status:r.status||"正常",
+      floor:r.floor||"",
+      openTime:r.openTime||"07:00-22:30",
+      managerId:r.managerId||"",
+      rows:r.rows||4,
+      cols:r.cols||6,
+      seats:r.seats,
+      cellType:r.cellType||"座位类:普通座位",
+      facilities:(r.facilities||[]).join(",")
+      ,seatMap:Array.isArray(r.seatMap)?r.seatMap.slice():[],
+      customTypes:Array.isArray(r.customTypes)?r.customTypes.slice():[],
+      batchScope:"row",batchIndex:"1",batchCategory:"座位类",batchSubtype:"普通座位",newTypeClass:"座位类",newTypeName:"",
+      layoutImage:r.layoutImage||""
+    };
+    App.state.adminRoomFormVisible=true;
+    App.render.adminRooms();
+  },{payload:{index}});
+}
+function toggleRoomForm(){
+  return App.debug.run("toggleRoomForm",()=>{
+    if(!isSuperAdmin()){
+      App.util.toast("普通管理员无新增自习室权限");
+      return;
+    }
+    App.state.adminRoomFormVisible=!App.state.adminRoomFormVisible;
+    if(!App.state.adminRoomFormVisible){
+      App.data.roomForm={editIndex:-1,name:"",location:"",status:"正常",floor:"",openTime:"07:00-22:30",managerId:"",rows:4,cols:6,seats:20,cellType:"座位类:普通座位",facilities:"空调,WiFi",seatMap:[],customTypes:[],batchScope:"row",batchIndex:"1",batchCategory:"座位类",batchSubtype:"普通座位",newTypeClass:"座位类",newTypeName:"",layoutImage:""};
+    }
+    App.render.adminRooms();
+  });
+}
+function updateRoomGridSize(){
+  return App.debug.run("updateRoomGridSize",()=>{
+    const rows=Math.max(1,Math.min(20,parseInt(App.util.mustQS("#rfRows","单元格行数").value,10)||4));
+    const cols=Math.max(1,Math.min(20,parseInt(App.util.mustQS("#rfCols","单元格列数").value,10)||6));
+    const total=rows*cols;
+    App.data.roomForm.rows=rows;
+    App.data.roomForm.cols=cols;
+    App.data.roomForm.seats=total;
+    const current=Array.isArray(App.data.roomForm.seatMap)?App.data.roomForm.seatMap:[];
+    App.data.roomForm.seatMap=Array.from({length:total}).map((_,i)=>current[i]||App.data.roomForm.cellType||"座位类:普通座位");
+    App.render.adminRooms();
+  });
+}
+function setRoomDefaultCategory(category){
+  return App.debug.run("setRoomDefaultCategory",()=>{
+    App.debug.assert(["座位类","非座位类"].includes(category),"默认单元格分类非法",{category});
+    const subtype=(getSubTypesByCategory(category,App.data.roomForm.customTypes||[])[0]||"普通座位");
+    App.data.roomForm.cellType=buildCellTypeValue(category,[subtype]);
+    App.render.adminRooms();
+  },{payload:{category}});
+}
+function setRoomDefaultSubtype(subtype){
+  return App.debug.run("setRoomDefaultSubtype",()=>{
+    const {category}=splitCellType(App.data.roomForm.cellType);
+    App.data.roomForm.cellType=buildCellTypeValue(category,[subtype]);
+  },{payload:{subtype}});
+}
+function setBatchCategory(category){
+  return App.debug.run("setBatchCategory",()=>{
+    App.debug.assert(["座位类","非座位类"].includes(category),"批量设置分类非法",{category});
+    const sub=(getSubTypesByCategory(category,App.data.roomForm.customTypes||[])[0]||"普通座位");
+    App.data.roomForm.batchCategory=category;
+    App.data.roomForm.batchSubtype=sub;
+    App.render.adminRooms();
+  },{payload:{category}});
+}
+function openRoomBatchSubtypeModal(){
+  return App.debug.run("openRoomBatchSubtypeModal",()=>{
+    const category=App.util.mustQS("#rfBatchCategory","批量顶层分类").value;
+    const selected=parseSubtypeListValue(App.data.roomForm.batchSubtype);
+    const options=getSubTypesByCategory(category,App.data.roomForm.customTypes||[]);
+    App.util.mustQS("#genericModalBody","通用弹窗内容").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="modal-title">🧩 选择批量子类</div><button class="back" onclick="closeGenericModal()">✕</button></div>
+      <div class="muted" style="margin-bottom:8px">分类：${category}（可多选）</div>
+      <div>${options.map(name=>`<label style="display:inline-flex;align-items:center;gap:6px;margin:0 8px 8px 0;padding:5px 8px;border:1px solid #dbe5ff;border-radius:8px;background:#f8fbff"><input type="checkbox" name="roomBatchSubtype" value="${name}" ${selected.includes(name)?"checked":""}><span>${name}</span></label>`).join("")}</div>
+      <div style="display:flex;justify-content:flex-end;gap:10px"><button class="btn btn-outline" onclick="closeGenericModal()">取消</button><button class="btn btn-primary" onclick="saveRoomBatchSubtypeModal()">确认</button></div>
+    `;
+    App.util.mustQS("#genericModal","通用弹窗").classList.remove("hidden");
+  });
+}
+function saveRoomBatchSubtypeModal(){
+  return App.debug.run("saveRoomBatchSubtypeModal",()=>{
+    const selected=App.util.qsa('input[name="roomBatchSubtype"]:checked').map(el=>el.value);
+    App.debug.assert(selected.length>0,"请至少选择一个批量子类");
+    App.data.roomForm.batchSubtype=selected.join(",");
+    closeGenericModal();
+    App.render.adminRooms();
+  });
+}
+function addCustomCellType(){
+  return App.debug.run("addCustomCellType",()=>{
+    const category=App.util.mustQS("#rfNewTypeClass","新增子类顶层分类").value.trim();
+    const name=App.util.mustQS("#rfNewTypeName","新增子类名称").value.trim();
+    App.debug.assert(["座位类","非座位类"].includes(category),"顶层分类非法",{category});
+    App.debug.assert(name.length>=2,"子类名称至少2个字符",{name});
+    const exists=(App.data.roomForm.customTypes||[]).some(x=>x.category===category&&x.name===name);
+    if(exists){App.util.toast("该子类已存在");return}
+    App.data.roomForm.customTypes=[...(App.data.roomForm.customTypes||[]),{category,name}];
+    const defaultParsed=parseCellTypeValue(App.data.roomForm.cellType||"座位类:普通座位");
+    if(defaultParsed.category===category){
+      App.data.roomForm.cellType=buildCellTypeValue(category,[...defaultParsed.names,name]);
+    }
+    App.data.roomForm.newTypeName="";
+    App.render.adminRooms();
+  });
+}
+/* 管理端上传自习室布局图：
+ * 将图片转为 dataURL 写入 roomForm.layoutImage，最终由 saveRoom 持久化到 rooms。
+ */
+function setRoomLayoutImage(input){
+  return App.debug.run("setRoomLayoutImage",()=>{
+    const file=input&&input.files&&input.files[0];
+    if(!file){ return; }
+    App.debug.assert(/^image\//.test(file.type),"仅支持图片文件",{type:file.type});
+    const reader=new FileReader();
+    reader.onload=()=>{
+      App.data.roomForm.layoutImage=String(reader.result||"");
+      App.render.adminRooms();
+      App.util.toast("布局图已载入，点击保存后生效");
+    };
+    reader.onerror=()=>App.util.toast("布局图读取失败");
+    reader.readAsDataURL(file);
+  });
+}
+function clearRoomLayoutImage(){
+  return App.debug.run("clearRoomLayoutImage",()=>{
+    App.data.roomForm.layoutImage="";
+    App.render.adminRooms();
+  });
+}
+function setRoomCellType(index,type){
+  return App.debug.run("setRoomCellType",()=>{
+    const idx=parseInt(index,10);
+    App.debug.assert(Number.isInteger(idx)&&idx>=0,"单元格索引非法",{index});
+    App.data.roomForm.seatMap[idx]=type;
+  },{payload:{index,type}});
+}
+function openRoomCellTypeModal(index){
+  return App.debug.run("openRoomCellTypeModal",()=>{
+    const idx=parseInt(index,10);
+    App.debug.assert(Number.isInteger(idx)&&idx>=0,"单元格索引非法",{index});
+    App.state.editingCellIndex=idx;
+    App.state.editingCellContext="roomForm";
+    const current=App.data.roomForm.seatMap[idx]||App.data.roomForm.cellType||"座位类:普通座位";
+    const parsed=parseCellTypeValue(current);
+    App.util.mustQS("#genericModalBody","通用弹窗内容").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="modal-title">🧩 设置单元格性质</div><button class="back" onclick="closeGenericModal()">✕</button></div>
+      <div class="muted" style="margin-bottom:8px">单元格：#${idx+1}</div>
+      <div class="field"><label>顶层分类</label><select id="cellTypeCategorySelect" class="input" onchange="renderRoomCellSubtypeChooser()"><option ${parsed.category==="座位类"?"selected":""}>座位类</option><option ${parsed.category==="非座位类"?"selected":""}>非座位类</option></select></div>
+      <div class="field"><label>子类（同一顶层可多选）</label><div id="roomCellSubtypeWrap"></div></div>
+      <div style="display:flex;justify-content:flex-end;gap:10px"><button class="btn btn-outline" onclick="closeGenericModal()">取消</button><button class="btn btn-primary" onclick="saveRoomCellTypeModal()">确认</button></div>
+    `;
+    App.state.roomModalSelectedNames=parsed.names.slice();
+    renderRoomCellSubtypeChooser();
+    const modal=App.util.mustQS("#genericModal","通用弹窗");
+    scopeModalToFrame(modal);
+    modal.classList.remove("hidden");
+  },{payload:{index}});
+}
+function renderRoomCellSubtypeChooser(){
+  return App.debug.run("renderRoomCellSubtypeChooser",()=>{
+    const category=App.util.mustQS("#cellTypeCategorySelect","自习室单元格顶层分类").value;
+    const selected=Array.isArray(App.state.roomModalSelectedNames)?App.state.roomModalSelectedNames:[];
+    const options=getSubTypesByCategory(category,App.data.roomForm.customTypes||[]);
+    App.util.mustQS("#roomCellSubtypeWrap","自习室单元格子类容器").innerHTML=options.map(name=>`
+      <label style="display:inline-flex;align-items:center;gap:6px;margin:0 8px 8px 0;padding:5px 8px;border:1px solid #dbe5ff;border-radius:8px;background:#f8fbff">
+        <input type="checkbox" name="roomCellSubtype" value="${name}" ${selected.includes(name)?"checked":""}>
+        <span>${name}</span>
+      </label>
+    `).join("");
+  });
+}
+function saveRoomCellTypeModal(){
+  return App.debug.run("saveRoomCellTypeModal",()=>{
+    const idx=App.state.editingCellIndex;
+    App.debug.assert(App.state.editingCellContext==="roomForm","弹窗上下文错误",{context:App.state.editingCellContext});
+    App.debug.assert(Number.isInteger(idx)&&idx>=0,"未指定待编辑单元格",{idx});
+    const category=App.util.mustQS("#cellTypeCategorySelect","单元格顶层分类").value;
+    const names=App.util.qsa('input[name="roomCellSubtype"]:checked').map(el=>el.value);
+    App.debug.assert(names.length>0,"请至少选择一个子类");
+    const value=buildCellTypeValue(category,names);
+    App.data.roomForm.seatMap[idx]=value;
+    App.state.editingCellIndex=-1;
+    App.state.editingCellContext="roomForm";
+    closeGenericModal();
+    App.render.adminRooms();
+  });
+}
+function applyBatchCellType(){
+  return App.debug.run("applyBatchCellType",()=>{
+    const scope=App.util.mustQS("#rfBatchScope","批量设置范围").value;
+    const index=parseInt(App.util.mustQS("#rfBatchIndex","批量序号").value,10);
+    const category=App.util.mustQS("#rfBatchCategory","批量顶层分类").value;
+    const subtypes=parseSubtypeListValue(App.data.roomForm.batchSubtype);
+    App.debug.assert(subtypes.length>0,"批量设置至少选择一个子类");
+    const type=buildCellTypeValue(category,subtypes);
+    const rows=App.data.roomForm.rows||4;
+    const cols=App.data.roomForm.cols||6;
+    App.debug.assert(["row","col"].includes(scope),"批量范围非法",{scope});
+    App.debug.assert(Number.isInteger(index)&&index>=1&&(scope==="row"?index<=rows:index<=cols),"批量序号非法",{scope,index});
+    const seatMap=Array.isArray(App.data.roomForm.seatMap)?App.data.roomForm.seatMap:[];
+    for(let i=0;i<rows*cols;i+=1){
+      const r=Math.floor(i/cols)+1;
+      const c=(i%cols)+1;
+      if((scope==="row"&&r===index)||(scope==="col"&&c===index)){
+        seatMap[i]=type;
+      }
+    }
+    App.data.roomForm.seatMap=seatMap;
+    App.render.adminRooms();
+  });
+}
+function applyAdminSeatBatch(){
+  return App.debug.run("applyAdminSeatBatch",()=>{
+    const room=App.data.rooms[App.state.adminSeatRoom];
+    App.debug.assert(!!room,"当前自习室不存在",{adminSeatRoom:App.state.adminSeatRoom});
+    App.debug.assert(canManageRoom(room),"无权限批量修改该自习室",{room:room.name});
+    const scope=App.util.mustQS("#asBatchScope","座位管理批量范围").value;
+    const index=parseInt(App.util.mustQS("#asBatchIndex","座位管理批量序号").value,10);
+    const subtypes=parseSubtypeListValue(App.state.adminSeatBatchSubtype);
+    App.debug.assert(subtypes.length>0,"座位管理批量设置至少选择一个子类");
+    const type=buildCellTypeValue("座位类",subtypes);
+    const rows=Math.max(1,parseInt(room.rows,10)||4);
+    const cols=Math.max(1,parseInt(room.cols,10)||6);
+    const total=rows*cols;
+    App.debug.assert(["row","col"].includes(scope),"批量范围非法",{scope});
+    App.debug.assert(Number.isInteger(index)&&index>=1&&(scope==="row"?index<=rows:index<=cols),"批量序号非法",{scope,index});
+    const map=Array.isArray(room.seatMap)?room.seatMap:[];
+    room.seatMap=Array.from({length:total}).map((_,i)=>map[i]||room.cellType||"座位类:普通座位");
+    for(let i=0;i<total;i+=1){
+      const r=Math.floor(i/cols)+1;
+      const c=(i%cols)+1;
+      if((scope==="row"&&r===index)||(scope==="col"&&c===index)){
+        room.seatMap[i]=type;
+      }
+    }
+    refreshRoomAvailability();
+    App.render.adminSeats();
+    App.render.adminRooms();
+    App.util.toast("座位批量设置已应用");
+  });
+}
+function openAdminSeatBatchSubtypeModal(){
+  return App.debug.run("openAdminSeatBatchSubtypeModal",()=>{
+    const room=App.data.rooms[App.state.adminSeatRoom];
+    App.debug.assert(!!room,"当前自习室不存在",{adminSeatRoom:App.state.adminSeatRoom});
+    const options=getSubTypesByCategory("座位类",room.customTypes||[]);
+    const selected=parseSubtypeListValue(App.state.adminSeatBatchSubtype);
+    App.util.mustQS("#genericModalBody","通用弹窗内容").innerHTML=`
+      <div style="display:flex;justify-content:space-between;align-items:center"><div class="modal-title">🧩 选择批量子类</div><button class="back" onclick="closeGenericModal()">✕</button></div>
+      <div class="muted" style="margin-bottom:8px">分类：座位类（可多选）</div>
+      <div>${options.map(name=>`<label style="display:inline-flex;align-items:center;gap:6px;margin:0 8px 8px 0;padding:5px 8px;border:1px solid #dbe5ff;border-radius:8px;background:#f8fbff"><input type="checkbox" name="adminSeatBatchSubtype" value="${name}" ${selected.includes(name)?"checked":""}><span>${name}</span></label>`).join("")}</div>
+      <div style="display:flex;justify-content:flex-end;gap:10px"><button class="btn btn-outline" onclick="closeGenericModal()">取消</button><button class="btn btn-primary" onclick="saveAdminSeatBatchSubtypeModal()">确认</button></div>
+    `;
+    App.util.mustQS("#genericModal","通用弹窗").classList.remove("hidden");
+  });
+}
+function saveAdminSeatBatchSubtypeModal(){
+  return App.debug.run("saveAdminSeatBatchSubtypeModal",()=>{
+    const selected=App.util.qsa('input[name="adminSeatBatchSubtype"]:checked').map(el=>el.value);
+    App.debug.assert(selected.length>0,"请至少选择一个批量子类");
+    App.state.adminSeatBatchSubtype=selected.join(",");
+    closeGenericModal();
+    App.render.adminSeats();
+  });
+}
+function mockScanStudentQr(){
+  return App.debug.run("mockScanStudentQr",()=>{
+    App.util.toast("扫码成功（示意）：202301010101 已签到");
+  });
+}
+function setAdminSeatRoom(index){
+  return App.debug.run("setAdminSeatRoom",()=>{
+    const idx=parseInt(index,10);
+    App.debug.assert(Number.isInteger(idx)&&idx>=0&&idx<App.data.rooms.length,"非法自习室索引",{index});
+    App.debug.assert(canManageRoom(App.data.rooms[idx]),"无权限查看该自习室座位",{index});
+    App.state.adminSeatRoom=idx;
+    App.render.adminSeats();
+  },{payload:{index}});
+}
+function saveRoom(){
+  return App.debug.run("saveRoom",()=>{
+    const f=App.data.roomForm;
+    const name=App.util.mustQS("#rfName","自习室名称输入框").value.trim();
+    const location=App.util.mustQS("#rfLoc","自习室位置输入框").value.trim();
+    const status=App.util.mustQS("#rfStatus","自习室情况输入框").value.trim();
+    const floor=App.util.mustQS("#rfFloor","自习室楼层输入框").value.trim();
+    const admin=getCurrentAdminAccount();
+    const adminManager=getCurrentAdminManager();
+    const inputManagerId=App.util.mustQS("#rfManagerId","自习室负责人选择框").value;
+    const managerId=isSuperAdmin()?inputManagerId:String((adminManager&&adminManager.id)||inputManagerId||"").trim();
+    const managerProfile=getManagerById(managerId);
+    const manager=managerProfile?managerProfile.name:"";
+    const openTime=App.util.mustQS("#rfOpenTime","自习室开放时段输入框").value.trim();
+    const rows=parseInt(App.util.mustQS("#rfRows","自习室行数输入框").value,10)||0;
+    const cols=parseInt(App.util.mustQS("#rfCols","自习室列数输入框").value,10)||0;
+    const seats=rows*cols;
+    const cellCategory=App.util.mustQS("#rfCellCategory","默认单元格顶层分类输入框").value.trim();
+    const cellSubtype=App.util.mustQS("#rfCellSubtype","默认单元格子类名称输入框").value.trim();
+    const cellType=buildCellTypeValue(cellCategory,[cellSubtype]);
+    const facilitiesText=App.util.mustQS("#rfFacilities","自习室设施输入框").value.trim();
+    const expectedTotal=Math.max(1,rows*cols);
+    const rawSeatMap=Array.isArray(f.seatMap)?f.seatMap:[];
+    const seatMap=Array.from({length:expectedTotal}).map((_,i)=>rawSeatMap[i]||cellType);
+    const facilities=facilitiesText.split(",").map(x=>x.trim()).filter(Boolean);
+    if(!name||!location||!floor||!managerId||!manager||!openTime||seats<=0||facilities.length===0){App.util.toast("请完整填写自习室信息");return}
+    const seatClassCount=seatMap.filter(isSeatCellType).length;
+    const normalizedAvailable=Math.max(0,Math.min(seatClassCount,f.editIndex>-1?App.data.rooms[f.editIndex].available:seatClassCount));
+    if(f.editIndex>-1){
+      App.debug.assert(canManageRoom(App.data.rooms[f.editIndex]),"无权限修改该自习室",{index:f.editIndex});
+      Object.assign(App.data.rooms[f.editIndex],{name,location,status,floor,managerId,manager,openTime,rows,cols,seats,cellType,seatMap,customTypes:f.customTypes||[],facilities,available:normalizedAvailable,layoutImage:f.layoutImage||""});
+      App.util.toast("自习室已更新");
+    }else{
+      App.debug.assert(isSuperAdmin(),"仅超级管理员可新增自习室");
+      App.data.rooms.push({id:Date.now(),name,location,status,floor,managerId,manager,openTime,rows,cols,seats,cellType,seatMap,customTypes:f.customTypes||[],facilities,available:normalizedAvailable,layoutImage:f.layoutImage||""});
+      App.util.toast("自习室已新增");
+    }
+    App.data.roomForm={editIndex:-1,name:"",location:"",status:"正常",floor:"",openTime:"07:00-22:30",managerId:"",rows:4,cols:6,seats:20,cellType:"座位类:普通座位",facilities:"空调,WiFi",seatMap:[],customTypes:[],batchScope:"row",batchIndex:"1",batchCategory:"座位类",batchSubtype:"普通座位",newTypeClass:"座位类",newTypeName:"",layoutImage:""};
+    App.state.adminRoomFormVisible=false;
+    App.render.adminRooms();
+    App.render.adminSeats();
+    App.render.adminSettings();
+    App.debug.validateData();
+  });
+}
+function exportAdminReport(){
+  return App.debug.run("exportAdminReport",()=>{
+    const analytics=getAdminAnalytics(App.state.adminStatsPeriod,App.state.adminStatsTab);
+    const rows=[
+      ["指标","数值"],
+      ["统计周期",App.state.adminStatsPeriod],
+      ["统计标签",App.state.adminStatsTab],
+      ["总预约",String(analytics.totalReserve)],
+      ["总学习时长",`${analytics.totalStudyHours}h`],
+      ["签到率",`${analytics.checkinRate}%`],
+      ["平均信用分",String(analytics.avgCredit)],
+      ...analytics.labels.map((lb,i)=>[lb,String(analytics.values[i]||0)])
+    ];
+    const csv=rows.map(r=>r.join(",")).join("\n");
+    const blob=new Blob(["\ufeff"+csv],{type:"text/csv;charset=utf-8;"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;
+    a.download=`统计分析报表_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    App.util.toast("报表导出成功");
+  });
+}
+function deleteRoom(index){
+  return App.debug.run("deleteRoom",()=>{
+    const room=App.data.rooms[index];
+    App.debug.assert(!!room,"删除目标自习室不存在",{index});
+    App.debug.assert(isSuperAdmin(),"仅超级管理员可删除自习室");
+    const hasPending=App.data.reservations.some(r=>r.room===room.name&&(r.status==="pending"||r.status==="active"));
+    if(hasPending){App.util.toast("删除失败：该自习室有未完成预约");return}
+    App.data.rooms.splice(index,1);
+    App.render.adminRooms();
+    App.render.adminSeats();
+    App.render.adminSettings();
+    App.util.toast("自习室已删除");
+    App.debug.validateData();
+  },{payload:{index}});
+}
+
+/* 管理端手机端审计：
+ * 通过程序化切换 section，检查每个模块在 mobile 下是否可渲染且非空。
+ * 返回结果用于交付验收，不改变业务数据。
+ */
+function runAdminMobileAudit(){
+  return App.debug.run("admin.mobile.audit",()=>{
+    const sections=["dashboard","users","rooms","seats","reservations","checkins","announcements","statistics","settings"];
+    App.debug.assert(App.state.adminLogged,"管理端未登录，无法执行手机审计");
+    const prevDevice=App.state.device;
+    const prevSection=App.state.adminSection;
+    App.action.switchDevice("mobile");
+    const results=sections.map(section=>{
+      openAdminSection(section);
+      const container=App.util.mustQS(`#admin-${section}`,`管理模块 ${section}`);
+      const visible=!container.classList.contains("hidden");
+      const html=(container.innerHTML||"").trim();
+      const ok=visible&&html.length>0;
+      return {section,ok,visible,htmlLength:html.length};
+    });
+    App.action.switchDevice(prevDevice);
+    openAdminSection(prevSection);
+    const failed=results.filter(x=>!x.ok);
+    const summary={ok:failed.length===0,total:results.length,failed,results};
+    App.debug.checkpoint("admin.mobile.audit.summary",summary);
+    return summary;
+  });
+}
+
+window.runDebugSmokeTest=()=>App.debug.smokeTest();
+window.getDebugLogs=()=>App.debug.logs.slice();
+window.resetDataPool=()=>resetDataPool();
+window.runFullUiAudit=()=>App.debug.run("debug.fullUiAudit",()=>({
+  smoke:App.debug.smokeTest(),
+  adminMobile:runAdminMobileAudit(),
+  uiPaths:(App.debug.validateUiPaths(),{ok:true}),
+  logs:App.debug.logs.slice(-20)
+}));
+
+App.init();
+</script>
+</body>
+</html>
