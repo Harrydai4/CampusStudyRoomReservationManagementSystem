@@ -234,10 +234,10 @@ notepad "src\main\resources\application-local.properties"
 
 | 类别          | 路径                                                                                   |
 | ----------- | ------------------------------------------------------------------------------------ |
-| 后端          | `src/main/java/`**、`src/test/**`                                                     |
+| 后端          | `src/main/java/`**、`src/test/`**                                                     |
 | 配置          | `application.properties`、`application-local.properties.example`（**只有 example**）      |
 | 前端产物        | `src/main/resources/static/`**（含 `index.html`）                                       |
-| 前端源码        | `frontend/src/**`、`package.json`、`package-lock.json`、`vite.config.js` 等              |
+| 前端源码        | `frontend/src/`**、`package.json`、`package-lock.json`、`vite.config.js` 等              |
 | 构建          | `pom.xml`、`mvnw`、`mvnw.cmd`、`.mvn/`                                                  |
 | 文档          | `docs/**`、`README.md`                                                                |
 | **数据库 SQL** | `**docs/06-部署配置/schema.sql`、`data.sql`、`database-full.sql`、`init-shared-mysql.sql`** |

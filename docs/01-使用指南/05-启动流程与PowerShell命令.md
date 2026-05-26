@@ -187,6 +187,7 @@ cd D:\SchoolWorkPlace\Database\CSRRMupdate
 | 管理员   | admin        | admin123 |
 | 超级管理员 | superadmin   | super123 |
 
+
 > **登录不了？** 若提示「账号或密码错误」，多半是本地测试时改过密码。项目默认在**每次启动后端**时自动把上表演示账号密码恢复为表中值（`app.demo.sync-accounts-on-startup=true`）。请**重启** `spring-boot:run` 后再用 `123456` / `admin123` 登录。若仍失败，清空浏览器 Local Storage 中的 `token`、`role` 后重试。
 
 ---
