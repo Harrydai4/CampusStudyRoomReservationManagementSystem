@@ -1,0 +1,24 @@
+# 可选：用 Docker 启动 MySQL，免本机安装。
+# 用法（需已安装 Docker Desktop）：
+#   cd docs/06-部署配置
+#   docker compose up -d
+# 然后在 application-local.properties 或环境变量中设置：
+#   DB_PASSWORD=csrrm_dev_123
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: csrrm-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: csrrm_dev_123
+      MYSQL_DATABASE: study_room_reservation
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - csrrm_mysql_data:/var/lib/mysql
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+
+volumes:
+  csrrm_mysql_data:
