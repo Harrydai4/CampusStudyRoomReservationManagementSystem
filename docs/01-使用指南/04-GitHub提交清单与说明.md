@@ -1,5 +1,6 @@
-# 04 — GitHub 提交傻瓜式指南（跟着做就行）
+# 04 — GitHub 提交清单与说明
 
+> **组员完整流程（Fork → 分支 → PR → 发组长）** → **[06-GitHub傻瓜式提交全流程.md](06-GitHub傻瓜式提交全流程.md)**  
 > **只提交这个文件夹**：`D:\SchoolWorkPlace\Database\CSRRMupdate`  
 > **不要提交**：兄弟目录 `CampusStudyRoomReservationManagementSystem-master`（那是 V1.0 原型包）  
 > **仓库建议名**：`campus-study-room-reservation`（或按老师要求命名）

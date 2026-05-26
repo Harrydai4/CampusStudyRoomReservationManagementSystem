@@ -17,6 +17,8 @@
 
 **启动流程（可复制 PowerShell）** → [05-启动流程与PowerShell命令](docs/01-使用指南/05-启动流程与PowerShell命令.md)
 
+**GitHub 组员提交（Fork + PR）** → [06-GitHub傻瓜式提交全流程](docs/01-使用指南/06-GitHub傻瓜式提交全流程.md)
+
 ---
 
 ## 项目结构（精简）
