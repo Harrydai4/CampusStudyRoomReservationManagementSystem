@@ -41,21 +41,34 @@ $schemaFile = Join-Path $outDir "schema.sql"
 $dataFile = Join-Path $outDir "data.sql"
 $fullFile = Join-Path $outDir "database-full.sql"
 
+if (-not (Test-Path $outDir)) {
+    New-Item -ItemType Directory -Path $outDir -Force | Out-Null
+}
+
 $common = @("-h", $DbHost, "-P", $Port, "-u", $User, "--set-charset", "--default-character-set=utf8mb4", $Database)
 $env:MYSQL_PWD = $Password
 
+function Invoke-MysqldumpFile {
+    param([string[]]$ExtraArgs, [string]$OutPath)
+    $tmp = [System.IO.Path]::GetTempFileName()
+    try {
+        & mysqldump @common @ExtraArgs --result-file="$tmp"
+        if ($LASTEXITCODE -ne 0) { throw "mysqldump failed" }
+        Move-Item -Path $tmp -Destination $OutPath -Force
+    } finally {
+        if (Test-Path $tmp) { Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 try {
     Write-Host "=== Export database for Git / course submission ===" -ForegroundColor Cyan
-    & mysqldump @common --no-data --routines --triggers --result-file="$schemaFile"
-    if ($LASTEXITCODE -ne 0) { throw "schema export failed" }
+    Invoke-MysqldumpFile -ExtraArgs @("--no-data", "--routines", "--triggers") -OutPath $schemaFile
     Write-Host "OK: $schemaFile" -ForegroundColor Green
 
-    & mysqldump @common --no-create-info --skip-triggers --complete-insert --result-file="$dataFile"
-    if ($LASTEXITCODE -ne 0) { throw "data export failed" }
+    Invoke-MysqldumpFile -ExtraArgs @("--no-create-info", "--skip-triggers", "--complete-insert") -OutPath $dataFile
     Write-Host "OK: $dataFile" -ForegroundColor Green
 
-    & mysqldump @common --routines --triggers --complete-insert --result-file="$fullFile"
-    if ($LASTEXITCODE -ne 0) { throw "full export failed" }
+    Invoke-MysqldumpFile -ExtraArgs @("--routines", "--triggers", "--complete-insert") -OutPath $fullFile
     Write-Host "OK: $fullFile" -ForegroundColor Green
 
     Write-Host ""

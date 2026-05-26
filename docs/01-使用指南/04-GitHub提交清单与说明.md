@@ -239,7 +239,7 @@ notepad "src\main\resources\application-local.properties"
 | 前端产物        | `src/main/resources/static/`**（含 `index.html`）                                       |
 | 前端源码        | `frontend/src/`**、`package.json`、`package-lock.json`、`vite.config.js` 等              |
 | 构建          | `pom.xml`、`mvnw`、`mvnw.cmd`、`.mvn/`                                                  |
-| 文档          | `docs/**`、`README.md`                                                                |
+| 文档          | `docs/`**、`README.md`                                                                |
 | **数据库 SQL** | `**docs/06-部署配置/schema.sql`、`data.sql`、`database-full.sql`、`init-shared-mysql.sql`** |
 | 脚本          | `scripts/*.ps1`                                                                      |
 | 占位          | `uploads/README.md`                                                                  |

@@ -685,10 +685,29 @@ public class AppService {
 
     @Transactional
     public Map<String, Object> scanCheckin(CurrentUser admin, Map<String, Object> req) {
+        String studentNo = text(req, "studentNo", "").trim();
         String token = text(req, "qrToken", "");
         Long userId = nullableLong(req, "userId");
         Long reservationId = nullableLong(req, "reservationId");
-        if (!token.isBlank()) {
+        String checkinMethod = "QR_SCAN";
+
+        if (!studentNo.isBlank()) {
+            Map<String, Object> profile = one("""
+                    select sp.user_id, sp.student_no, sp.name, sp.audit_status
+                    from student_profile sp
+                    join user_account ua on ua.id = sp.user_id
+                    where sp.student_no=?
+                    """, studentNo);
+            if (profile == null) {
+                throw new BusinessException(404, "学号不存在：" + studentNo);
+            }
+            if (!"APPROVED".equals(String.valueOf(profile.get("audit_status")))) {
+                throw new BusinessException(403, "该学号注册尚未通过审核");
+            }
+            userId = num(profile.get("user_id"));
+            reservationId = null;
+            checkinMethod = "STUDENT_NO";
+        } else if (!token.isBlank()) {
             try {
                 String decoded = new String(Base64.getUrlDecoder().decode(token), StandardCharsets.UTF_8);
                 String[] parts = decoded.split(":");
@@ -699,22 +718,29 @@ public class AppService {
                 if (issuedAt > nowMillis + 5_000 || nowMillis - issuedAt > 60_000) {
                     throw new BusinessException(400, "二维码已过期，请让学生重新生成");
                 }
+            } catch (BusinessException ex) {
+                throw ex;
             } catch (Exception ex) {
                 throw new BusinessException(400, "二维码无效或已过期");
             }
         }
         if (userId == null && reservationId == null) {
-            throw new BusinessException(400, "请先扫描或粘贴学生签到二维码");
+            throw new BusinessException(400, "请输入学生学号");
         }
         Map<String, Object> r = reservationId != null && reservationId > 0
                 ? reservationDetail(reservationId)
-                : one("select * from reservation where user_id=? and status='PENDING' order by reserve_date,start_time limit 1", userId);
+                : one("""
+                        select * from reservation
+                        where user_id=? and status='PENDING'
+                        order by reserve_date desc, start_time desc, id desc
+                        limit 1
+                        """, userId);
         if (r == null) {
-            throw new BusinessException(404, "当前无可签到预约");
+            throw new BusinessException(404, "该学生当前没有待签到的预约");
         }
         Map<String, Object> room = room(num(r.get("room_id")));
         if (!admin.isSuperAdmin() && !Objects.equals(num(room.get("manager_id")), admin.id())) {
-            throw new BusinessException(403, "无权限为该自习室签到");
+            throw new BusinessException(403, "无权限为该自习室签到，请使用 superadmin 或该自习室管理员账号");
         }
         if (!"PENDING".equals(String.valueOf(r.get("status")))) {
             throw new BusinessException(409, "该预约不能签到");
@@ -726,7 +752,7 @@ public class AppService {
         jdbc.update("delete from checkin_record where reservation_id=?", rid);
         jdbc.update("update reservation set status='USING',sign_in_time=?,updated_at=? where id=?", now, now, rid);
         jdbc.update("insert into checkin_record(reservation_id,user_id,admin_id,checkin_method,checkin_time,result) values(?,?,?,?,?,?)",
-                rid, uid, admin.id(), "QR_SCAN", now, "ON_TIME");
+                rid, uid, admin.id(), checkinMethod, now, "ON_TIME");
         changeCredit(uid, 5, "ON_TIME_CHECKIN", "准时签到奖励", rid);
         return reservationDetail(rid);
     }

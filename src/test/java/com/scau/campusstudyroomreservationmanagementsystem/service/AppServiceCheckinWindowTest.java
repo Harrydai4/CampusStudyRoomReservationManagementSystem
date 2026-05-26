@@ -12,6 +12,7 @@ import java.sql.Time;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -25,6 +26,27 @@ class AppServiceCheckinWindowTest {
     private AppService appService;
     @Autowired
     private JdbcTemplate jdbc;
+
+    @Test
+    void scanCheckinByStudentNoWithinWindow() {
+        Long userId = jdbc.queryForObject("select id from user_account where username='202301010101'", Long.class);
+        jdbc.update("delete from reservation where user_id=? and status='PENDING'", userId);
+        Long seatId = jdbc.queryForObject("select id from seat where is_seat=1 limit 1", Long.class);
+        Long roomId = jdbc.queryForObject("select room_id from seat where id=?", Long.class, seatId);
+        LocalDate today = LocalDate.now();
+        LocalTime nowTime = LocalTime.now().withSecond(0).withNano(0);
+        jdbc.update("""
+                insert into reservation(reservation_no,user_id,room_id,seat_id,reserve_date,start_time,end_time,status,created_at,updated_at)
+                values(?,?,?,?,?,?,?,?,?,?)
+                """, "TEST-STUDENT-NO", userId, roomId, seatId, Date.valueOf(today),
+                Time.valueOf(nowTime), Time.valueOf(nowTime.plusHours(2)),
+                "PENDING", LocalDateTime.now(), LocalDateTime.now());
+
+        var admin = new com.scau.campusstudyroomreservationmanagementsystem.support.CurrentUser(
+                1L, "admin", "ADMIN", "张老师");
+        var result = appService.scanCheckin(admin, Map.of("studentNo", "202301010101"));
+        assertEquals("USING", result.get("status"));
+    }
 
     @Test
     void qrCodeRejectsOutsideCheckinWindow() {

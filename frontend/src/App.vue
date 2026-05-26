@@ -165,10 +165,12 @@
           </div>
           <div class="card check-actions" v-if="activeReservation">
             <template v-if="activeReservation.status === 'PENDING'">
+              <div class="check-wait-card card">
+                <strong>等待管理员签到</strong>
+                <p class="check-student-no">学号：<span>{{ studentNoDisplay }}</span></p>
+                <p class="muted check-wait-tip">请向管理员报学号；无需二维码，签到成功后本页自动更新</p>
+              </div>
               <div class="check-actions-state">
-                <button type="button" class="round-action primary-round" :disabled="!canOpenCheckinQr" @click="loadQr">
-                  <span>📱</span><strong>出示二维码签到</strong>
-                </button>
                 <button type="button" class="round-action warning-round" @click="openFeedbackModal">
                   <span>💬</span><strong>问题反馈</strong>
                 </button>
@@ -462,21 +464,11 @@
 
           <template v-if="adminPage === 'checkins'">
             <div class="card scan-box">
-              <div class="scanner-toolbar">
-                <button v-if="canUseLiveCamera" type="button" class="btn btn-primary" @click="toggleCameraScan">
-                  {{ isScanning ? '停止扫码' : '实时扫码' }}
-                </button>
-                <button type="button" class="btn btn-primary" @click="triggerPhotoScan">拍照扫码</button>
-                <button type="button" class="btn btn-outline" :disabled="!scanToken.trim()" @click="scanCheckin">手动确认</button>
-                <input ref="scanPhotoInput" type="file" accept="image/*" capture="environment" class="scan-photo-input" @change="onScanPhotoSelected" />
+              <p class="scanner-hint">输入学生<strong>学号</strong>（如 202301010101）后点击「确认签到」。学生端无需生成二维码。</p>
+              <div class="scan-student-row">
+                <input v-model="scanStudentNo" class="input" placeholder="请输入学生学号" maxlength="20" @keyup.enter="scanCheckin" />
+                <button type="button" class="btn btn-primary" :disabled="!scanStudentNo.trim()" @click="scanCheckin">确认签到</button>
               </div>
-              <div class="scanner-view" v-show="isScanning">
-                <video ref="scanVideo" autoplay muted playsinline playsInline webkit-playsinline></video>
-                <div class="scanner-frame"></div>
-              </div>
-              <p class="scanner-hint">{{ scanHint || defaultScanHint }}</p>
-              <p v-if="cameraPermissionHint" class="scanner-permission-hint">{{ cameraPermissionHint }}</p>
-              <input v-model="scanToken" class="input" placeholder="摄像头无法使用时，可粘贴学生签到二维码 token" />
             </div>
             <DataTable :rows="decoratedCheckins" :columns="['studentName','roomName','seatNo','checkin_time','checkout_time','result']" empty-text="暂无签到记录" />
           </template>
@@ -548,35 +540,6 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-outline" @click="confirmReservationOpen = false">取消</button>
           <button type="button" class="btn btn-primary" @click="createReservation">确认预约</button>
-        </div>
-      </div>
-    </div>
-
-    <div v-if="qrModalOpen" class="modal-mask" @click.self="closeQrModal">
-      <div class="modal-card" style="max-width:320px">
-        <div class="modal-head">
-          <div class="modal-title">{{ qrCheckinSuccess ? '签到成功' : '请向管理员出示二维码' }}</div>
-          <button type="button" class="modal-close" @click="closeQrModal">✕</button>
-        </div>
-        <div class="qr-box" style="text-align:center">
-          <div v-if="qrCheckinSuccess" class="qr-success-state">
-            <div class="qr-success-icon">✓</div>
-            <p class="qr-success-text">签到成功</p>
-            <small class="muted">5 秒后自动关闭</small>
-          </div>
-          <template v-else>
-            <div class="qr-image" v-html="qrSvg"></div>
-            <div class="qr-meta">
-              <strong>{{ qrInfo.name }} · {{ qrInfo.studentNo }}</strong>
-              <span>{{ qrInfo.roomName }} · {{ qrInfo.seatNo }}</span>
-              <small>{{ qrCountdown > 0 ? `${qrCountdown} 秒后过期` : '正在刷新…' }}</small>
-            </div>
-          </template>
-        </div>
-        <div v-if="!qrCheckinSuccess" class="modal-actions">
-          <button type="button" class="btn btn-outline" @click="loadQr">刷新二维码</button>
-          <button type="button" class="btn btn-outline" @click="copyQrToken">复制 token</button>
-          <button type="button" class="btn btn-primary" @click="closeQrModal">关闭</button>
         </div>
       </div>
     </div>
@@ -815,9 +778,7 @@
 <script setup>
 import axios from 'axios'
 import * as echarts from 'echarts'
-import jsQR from 'jsqr'
 import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
-import { createQrSvg } from './qr'
 import {
   ADMIN_COLUMN_LABELS,
   formatAdminCell,
@@ -869,14 +830,7 @@ const reservations = ref([])
 const reservationStatus = ref('ALL')
 const announcements = ref([])
 const notifications = ref([])
-const qrToken = ref('')
-const qrSvg = ref('')
-const qrCountdown = ref(0)
-const qrCheckinSuccess = ref(false)
-let qrCountdownTimer = null
-let qrSuccessCloseTimer = null
 let checkinPollTimer = null
-const qrInfo = ref({})
 const credit = ref({ score: 0, logs: [] })
 const studyStats = ref({})
 const studentChart = ref(null)
@@ -900,7 +854,6 @@ const quickTimeSlots = [
   { label: '19:00-21:00', start: '19:00', end: '21:00' }
 ]
 const confirmReservationOpen = ref(false)
-const qrModalOpen = ref(false)
 const checkoutModalOpen = ref(false)
 const checkoutSummary = ref({})
 const profileInfoOpen = ref(false)
@@ -949,15 +902,7 @@ const feedbackHandleOpen = ref(false)
 const feedbackHandleForm = reactive({ id: null, studentName: '', type: '', content: '', handleResult: '' })
 const adminSeatRoomId = ref(null)
 const adminSeats = ref([])
-const scanToken = ref('')
-const scanVideo = ref(null)
-const scanPhotoInput = ref(null)
-const isScanning = ref(false)
-const scanHint = ref('')
-const cameraPermissionHint = ref('')
-let scanStream = null
-let scanFrame = 0
-let barcodeDetector = null
+const scanStudentNo = ref('')
 const adminChart = ref(null)
 const usageChart = ref(null)
 const roomForm = reactive({})
@@ -968,14 +913,7 @@ const operationLogs = ref([])
 const tempLeaveHint = ref('暂离中，请在 30 分钟内返回座位')
 
 const todayText = computed(() => new Date().toLocaleDateString('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' }))
-/** 实时摄像头仅 HTTPS 或 localhost 可用；局域网 IP + HTTP 需用「拍照扫码」 */
-const canUseLiveCamera = computed(() => {
-  if (typeof window === 'undefined') return true
-  return window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1'
-})
-const defaultScanHint = computed(() => canUseLiveCamera.value
-  ? '电脑端可点「实时扫码」打开摄像头；手机局域网访问请用「拍照扫码」。'
-  : '当前为局域网 HTTP，请点「拍照扫码」对准学生二维码拍照，系统会自动识别并完成签到。')
+const studentNoDisplay = computed(() => me.value.student_no || me.value.username || '—')
 const homeDateText = computed(() => `${new Date().getMonth() + 1}月${new Date().getDate()}日`)
 const unreadCount = computed(() => notifications.value.filter(n => !n.read_flag).length)
 const currentRoom = computed(() => rooms.value.find(r => r.id === reservationForm.roomId))
@@ -1010,10 +948,6 @@ function isWithinCheckinWindow(r) {
   const now = Date.now()
   return now >= windowStart && now <= windowEnd
 }
-const canOpenCheckinQr = computed(() => {
-  const r = activeReservation.value
-  return !!r && r.status === 'PENDING' && isWithinCheckinWindow(r)
-})
 const checkinWindowHint = computed(() => {
   const r = activeReservation.value
   if (!r || r.status !== 'PENDING') return ''
@@ -1190,64 +1124,29 @@ function assetUrl(path) {
 function roomStatusText(status) {
   return { OPEN: '开放', CLOSED: '关闭', MAINTENANCE: '维护中' }[status] || status || '-'
 }
-function clearQrCountdown() {
-  if (qrCountdownTimer) {
-    clearInterval(qrCountdownTimer)
-    qrCountdownTimer = null
-  }
-}
-function clearQrSuccessCloseTimer() {
-  if (qrSuccessCloseTimer) {
-    clearTimeout(qrSuccessCloseTimer)
-    qrSuccessCloseTimer = null
-  }
-}
 function stopCheckinPagePoll() {
   if (checkinPollTimer) {
     clearInterval(checkinPollTimer)
     checkinPollTimer = null
   }
 }
-function closeQrModal() {
-  qrModalOpen.value = false
-  qrCheckinSuccess.value = false
-  clearQrCountdown()
-  clearQrSuccessCloseTimer()
-}
-async function showQrCheckinSuccess() {
-  if (qrCheckinSuccess.value) return
-  qrCheckinSuccess.value = true
-  clearQrCountdown()
-  try { await loadReservations() } catch { /* ignore */ }
-  notify('签到成功')
-  updateStudyTimer()
-  clearQrSuccessCloseTimer()
-  qrSuccessCloseTimer = setTimeout(() => closeQrModal(), 5000)
-}
-/** 签到页统一轮询：二维码成功反馈、自动切到学习中、无效签到被撤销后回退 */
+/** 签到页轮询：管理员按学号签到后自动切到「使用中」 */
 async function syncCheckinStateFromServer() {
   if (studentPage.value !== 'checkin') return
-  const prev = activeReservation.value
-  const prevStatus = prev?.status
-  const prevId = prev?.id
+  const tracked = activeReservation.value
+  if (!tracked?.id) return
+  const prevId = tracked.id
+  const prevStatus = tracked.status
   try {
     await loadReservations()
-    const cur = activeReservation.value
-    if (!cur) return
-    if (qrModalOpen.value && !qrCheckinSuccess.value) {
-      const targetId = qrInfo.value?.reservationId
-      if (Number(cur.id) === Number(targetId) && ['USING', 'TEMP_LEAVE'].includes(cur.status)) {
-        await showQrCheckinSuccess()
-        return
-      }
-    }
-    if (prevStatus === 'PENDING' && cur.status === 'USING' && Number(prevId) === Number(cur.id)) {
+    const updated = reservations.value.find(r => Number(r.id) === Number(prevId))
+    if (!updated) return
+    if (prevStatus === 'PENDING' && ['USING', 'TEMP_LEAVE'].includes(updated.status)) {
       updateStudyTimer()
-      if (!qrModalOpen.value) notify('签到成功，已进入学习状态')
+      notify('签到成功，已进入学习状态')
     }
-    if (prevStatus === 'USING' && cur.status === 'PENDING' && Number(prevId) === Number(cur.id)) {
+    if (prevStatus === 'USING' && updated.status === 'PENDING') {
       notify('签到无效，已恢复为待签到')
-      closeQrModal()
     }
   } catch { /* 轮询失败忽略 */ }
 }
@@ -1490,8 +1389,6 @@ function openModalConfirm(title, message, onOk) {
   genericModal.open = true
 }
 function clearSession(message) {
-  stopCameraScan()
-  clearQrCountdown()
   token.value = ''
   role.value = ''
   me.value = {}
@@ -1698,45 +1595,6 @@ async function cancelReservation(r) {
   notify('已取消预约')
   await loadReservations()
 }
-async function loadQr() {
-  if (!canOpenCheckinQr.value) {
-    notify(checkinWindowHint.value || '当前不在签到时间内')
-    return
-  }
-  try {
-    const data = await call('get', '/checkin/qrcode')
-    qrToken.value = data.qrToken
-    qrInfo.value = data
-    qrCheckinSuccess.value = false
-    qrSvg.value = await createQrSvg(data.qrToken)
-    qrModalOpen.value = true
-    clearQrCountdown()
-    qrCountdown.value = data.expireSeconds || 60
-    qrCountdownTimer = setInterval(() => {
-      qrCountdown.value -= 1
-      if (qrCountdown.value <= 0) {
-        if (!canOpenCheckinQr.value) {
-          notify('签到时间已结束，请关闭后重新预约')
-          closeQrModal()
-          return
-        }
-        loadQr().catch((e) => {
-          notify(e.message || '二维码已过期，请重新生成')
-          closeQrModal()
-        })
-      }
-    }, 1000)
-  } catch (e) { notify(e.message) }
-}
-async function copyQrToken() {
-  if (!qrToken.value) return notify('请先生成二维码')
-  try {
-    await navigator.clipboard.writeText(qrToken.value)
-    notify('token 已复制，可粘贴到管理端「手动确认」')
-  } catch {
-    notify('复制失败，请长按选中 token 手动复制')
-  }
-}
 async function checkout() {
   confirmCheckout()
 }
@@ -1829,7 +1687,6 @@ function statusText(status) {
   return { PENDING: '待使用', USING: '使用中', TEMP_LEAVE: '暂离中', COMPLETED: '已完成', CANCELLED: '已取消', VIOLATED: '违约', AUTO_CANCELLED: '超时取消', AUTO_CHECKOUT: '自动签退' }[status] || status
 }
 async function openAdmin(page) {
-  if (page !== 'checkins') stopCameraScan()
   adminPage.value = page
   if (page === 'dashboard') {
     dashboard.value = await call('get', '/admin/dashboard')
@@ -1843,7 +1700,7 @@ async function openAdmin(page) {
   if (page === 'reservations') adminReservations.value = await call('get', '/admin/reservations')
   if (page === 'checkins') {
     checkins.value = await call('get', '/admin/checkins')
-    scanHint.value = '点击「扫码签到」后，浏览器会弹出摄像头权限申请；若未弹出，请查看地址栏左侧的相机图标。'
+    scanStudentNo.value = ''
   }
   if (page === 'announcements') await loadAnnouncements()
   if (page === 'statistics') await loadAdminStatistics()
@@ -2008,213 +1865,17 @@ async function toggleSeat(s) {
   await loadAdminSeats()
 }
 async function scanCheckin() {
-  if (!scanToken.value.trim()) {
-    notify('请先扫描或粘贴学生签到 token')
+  const studentNo = scanStudentNo.value.trim()
+  if (!studentNo) {
+    notify('请输入学生学号')
     return
   }
   try {
-    await call('post', '/admin/checkin/scan', { qrToken: scanToken.value.trim() })
+    await call('post', '/admin/checkin/scan', { studentNo })
     notify('签到成功')
-    scanToken.value = ''
-    scanHint.value = ''
+    scanStudentNo.value = ''
     checkins.value = await call('get', '/admin/checkins')
   } catch (e) { notify(e.message) }
-}
-function triggerPhotoScan() {
-  scanPhotoInput.value?.click()
-}
-async function decodeQrFromImageFile(file) {
-  const url = URL.createObjectURL(file)
-  try {
-    const img = await new Promise((resolve, reject) => {
-      const el = new Image()
-      el.onload = () => resolve(el)
-      el.onerror = () => reject(new Error('无法读取照片'))
-      el.src = url
-    })
-    const scales = [1, 1.5, 0.75, 0.5, 2, 2.5]
-    for (const scale of scales) {
-      const token = decodeQrFromImageElement(img, scale)
-      if (token) return token
-    }
-    return ''
-  } finally {
-    URL.revokeObjectURL(url)
-  }
-}
-function decodeQrFromImageElement(img, scale = 1) {
-  const maxSide = 1600
-  let w = Math.round(img.naturalWidth * scale)
-  let h = Math.round(img.naturalHeight * scale)
-  if (Math.max(w, h) > maxSide) {
-    const ratio = maxSide / Math.max(w, h)
-    w = Math.round(w * ratio)
-    h = Math.round(h * ratio)
-  }
-  w = Math.max(1, w)
-  h = Math.max(1, h)
-  const canvas = document.createElement('canvas')
-  canvas.width = w
-  canvas.height = h
-  const ctx = canvas.getContext('2d', { willReadFrequently: true })
-  ctx.drawImage(img, 0, 0, w, h)
-  const imageData = ctx.getImageData(0, 0, w, h)
-  const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' })
-  return result?.data?.trim() || ''
-}
-async function onScanPhotoSelected(ev) {
-  const file = ev.target?.files?.[0]
-  if (ev.target) ev.target.value = ''
-  if (!file) return
-  scanHint.value = '正在识别照片中的二维码…'
-  try {
-    const token = await decodeQrFromImageFile(file)
-    if (!token) {
-      scanHint.value = '未识别到二维码，请重新拍照，确保二维码完整、光线充足。'
-      notify(scanHint.value)
-      return
-    }
-    scanToken.value = token
-    await scanCheckin()
-    scanHint.value = canUseLiveCamera.value
-      ? '签到成功。可继续实时扫码或拍照扫码。'
-      : '签到成功。请继续为下一位学生「拍照扫码」。'
-  } catch (e) {
-    scanHint.value = '照片解析失败，请重试。'
-    notify(e.message || scanHint.value)
-  }
-}
-function toggleCameraScan() {
-  if (isScanning.value) {
-    stopCameraScan()
-    return
-  }
-  startCameraScan()
-}
-function cameraErrorMessage(err) {
-  const name = err?.name || ''
-  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
-    return '摄像头权限被拒绝。请点击浏览器地址栏左侧的锁/相机图标 → 允许摄像头，然后再次点击「扫码签到」。'
-  }
-  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-    return '未检测到可用摄像头。请连接摄像头，或改用手动粘贴 token。'
-  }
-  if (name === 'NotReadableError' || name === 'TrackStartError') {
-    return '摄像头可能被其他软件占用（如微信、Zoom）。请关闭后重试。'
-  }
-  if (name === 'OverconstrainedError') {
-    return '当前摄像头不支持所需参数，请改用手动粘贴 token。'
-  }
-  if (!window.isSecureContext) {
-    return '局域网 HTTP 无法实时打开摄像头（浏览器安全限制）。请使用「拍照扫码」。'
-  }
-  const msg = err?.message ? String(err.message) : '未知错误'
-  return `摄像头启动失败：${msg}。请改用手动粘贴 token。`
-}
-async function openCameraStream() {
-  const attempts = [
-    { audio: false, video: { width: { ideal: 1280 }, height: { ideal: 720 } } },
-    { audio: false, video: { facingMode: 'user' } },
-    { audio: false, video: true }
-  ]
-  let lastError = null
-  for (const constraints of attempts) {
-    try {
-      return await navigator.mediaDevices.getUserMedia(constraints)
-    } catch (e) {
-      lastError = e
-      if (e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError') {
-        throw e
-      }
-    }
-  }
-  throw lastError || new Error('无法打开摄像头')
-}
-async function startCameraScan() {
-  cameraPermissionHint.value = ''
-  if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-    scanHint.value = cameraErrorMessage({ name: 'InsecureContext' })
-    notify(scanHint.value)
-    triggerPhotoScan()
-    return
-  }
-  if (!navigator.mediaDevices?.getUserMedia) {
-    scanHint.value = '当前浏览器不支持摄像头 API，请使用 Chrome / Edge，或改用手动粘贴 token。'
-    notify(scanHint.value)
-    return
-  }
-  try {
-    isScanning.value = true
-    scanHint.value = '正在请求摄像头权限，请在浏览器弹窗中选择「允许」…'
-    await nextTick()
-    scanStream = await openCameraStream()
-    if (!scanVideo.value) {
-      await nextTick()
-    }
-    if (!scanVideo.value) {
-      throw new Error('视频组件未就绪')
-    }
-    scanVideo.value.srcObject = scanStream
-    scanVideo.value.setAttribute('playsinline', 'true')
-    scanVideo.value.setAttribute('webkit-playsinline', 'true')
-    await scanVideo.value.play()
-    scanHint.value = '摄像头已打开。将学生签到二维码对准框内；若不能自动识别，可复制 token 到下方输入框。'
-    cameraPermissionHint.value = ''
-
-    if (!('BarcodeDetector' in window)) {
-      scanHint.value = '摄像头已打开。当前浏览器不支持自动识别二维码，请让学生出示二维码后，使用 Chrome 浏览器或改用手动粘贴 token。'
-      notify('摄像头已就绪，当前浏览器需手动粘贴 token')
-      return
-    }
-    const supportedFormats = await window.BarcodeDetector.getSupportedFormats?.()
-    if (supportedFormats && !supportedFormats.includes('qr_code')) {
-      scanHint.value = '摄像头已打开，但无法自动识别 QR 码，请改用手动粘贴 token。'
-      return
-    }
-    barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] })
-    scanCameraFrame()
-  } catch (e) {
-    stopCameraScan(false)
-    scanHint.value = cameraErrorMessage(e)
-    if (e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError') {
-      cameraPermissionHint.value = '提示：Edge/Chrome 地址栏左侧点击 🔒 或 🎥 → 站点权限 → 摄像头 → 允许，然后重新点击「扫码签到」。'
-    }
-    notify(scanHint.value)
-  }
-}
-async function scanCameraFrame() {
-  if (!isScanning.value || !scanVideo.value) return
-  if (barcodeDetector) {
-    try {
-      const codes = await barcodeDetector.detect(scanVideo.value)
-      if (codes.length > 0) {
-        scanToken.value = codes[0].rawValue
-        stopCameraScan()
-        await scanCheckin()
-        return
-      }
-    } catch (e) {
-      scanHint.value = '正在识别二维码，请保持画面清晰稳定。'
-    }
-  }
-  scanFrame = requestAnimationFrame(scanCameraFrame)
-}
-function stopCameraScan(resetHint = true) {
-  isScanning.value = false
-  if (scanFrame) {
-    cancelAnimationFrame(scanFrame)
-    scanFrame = 0
-  }
-  if (scanStream) {
-    scanStream.getTracks().forEach(track => track.stop())
-    scanStream = null
-  }
-  if (scanVideo.value) scanVideo.value.srcObject = null
-  barcodeDetector = null
-  if (resetHint) {
-    scanHint.value = ''
-    cameraPermissionHint.value = ''
-  }
 }
 function editAnnouncement(a = {}) {
   Object.assign(announcementForm, { id: a.id, title: a.title || '', content: a.content || '', type: a.type || 'SYSTEM', pinned: !!a.pinned })
@@ -2411,8 +2072,6 @@ watch(studentPage, (page) => {
   else stopCheckinPagePoll()
 }, { immediate: true })
 onBeforeUnmount(() => {
-  stopCameraScan()
-  closeQrModal()
   stopCheckinPagePoll()
   if (studyTimerHandle) clearInterval(studyTimerHandle)
 })

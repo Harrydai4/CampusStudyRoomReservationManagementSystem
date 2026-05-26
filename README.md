@@ -1,7 +1,7 @@
 # 校园自习室预约管理系统（CSRRMupdate）
 
 > **唯一开发目录**：`D:\SchoolWorkPlace\Database\CSRRMupdate`  
-> **版本**：V1.2 · Spring Boot 3.5 + Vue 3 + MySQL 8
+> **版本**：V1.2.1 · Spring Boot 3.5 + Vue 3 + MySQL 8
 
 ---
 
@@ -42,11 +42,13 @@ CSRRMupdate/
 
 > **V1.2 前端已打包**；**含 schema.sql / data.sql 数据库交付物**。可直接 `spring-boot:run` 后访问 **[http://localhost:8080](http://localhost:8080)**，不必再开 5173（开发改 UI 时仍可用 `npm run dev`）。
 
-**首次 clone 建议先导入数据库**：
+**首次 clone 建议先导入数据库**（课设必交 SQL 在 `docs/06-部署配置/`）：
 
 ```powershell
 .\scripts\import-database-local.ps1
 ```
+
+**签到方式**：学生预约后在签到页**报学号**；管理员在「签到」页输入学号 →「确认签到」。无需二维码。
 
 详细说明 → [目录结构说明](docs/02-架构说明/02-目录结构说明.md)
 
