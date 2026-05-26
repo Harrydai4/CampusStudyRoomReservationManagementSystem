@@ -42,6 +42,13 @@ public class AppController {
         return ApiResponse.ok(user.isStudent() ? app.studentInfo(user) : app.adminInfo(user));
     }
 
+    @PostMapping("/auth/change-password")
+    public ApiResponse<Void> changePassword(@AuthenticationPrincipal CurrentUser user,
+                                            @RequestBody Map<String, Object> req) {
+        app.changePassword(user, req);
+        return ApiResponse.ok(null);
+    }
+
     @GetMapping("/student/profile")
     public ApiResponse<Map<String, Object>> profile(@AuthenticationPrincipal CurrentUser user) {
         return ApiResponse.ok(app.studentInfo(user));
@@ -253,6 +260,18 @@ public class AppController {
         return ApiResponse.ok(null);
     }
 
+    @PostMapping("/admin/rooms/{roomId}/seats")
+    public ApiResponse<Map<String, Object>> createSeat(@AuthenticationPrincipal CurrentUser user,
+                                                      @PathVariable Long roomId) {
+        return ApiResponse.ok(app.addSeat(user, roomId));
+    }
+
+    @DeleteMapping("/admin/seats/{id}")
+    public ApiResponse<Void> deleteSeat(@AuthenticationPrincipal CurrentUser user, @PathVariable Long id) {
+        app.deleteSeat(user, id);
+        return ApiResponse.ok(null);
+    }
+
     @GetMapping("/admin/reservations")
     public ApiResponse<List<Map<String, Object>>> adminReservations(@AuthenticationPrincipal CurrentUser user) {
         return ApiResponse.ok(app.adminReservations(user));
@@ -294,13 +313,21 @@ public class AppController {
     }
 
     @GetMapping("/admin/statistics/usage")
-    public ApiResponse<List<Map<String, Object>>> usage(@AuthenticationPrincipal CurrentUser user) {
-        return ApiResponse.ok(app.statisticsUsage(user));
+    public ApiResponse<List<Map<String, Object>>> usage(@AuthenticationPrincipal CurrentUser user,
+                                                          @RequestParam(defaultValue = "day") String period) {
+        return ApiResponse.ok(app.statisticsUsage(user, period));
     }
 
     @GetMapping("/admin/statistics/peak")
-    public ApiResponse<List<Map<String, Object>>> peak(@AuthenticationPrincipal CurrentUser user) {
-        return ApiResponse.ok(app.statisticsPeak(user));
+    public ApiResponse<List<Map<String, Object>>> peak(@AuthenticationPrincipal CurrentUser user,
+                                                        @RequestParam(defaultValue = "day") String period) {
+        return ApiResponse.ok(app.statisticsPeak(user, period));
+    }
+
+    @GetMapping("/admin/statistics/report")
+    public ApiResponse<Map<String, Object>> statisticsReport(@AuthenticationPrincipal CurrentUser user,
+                                                              @RequestParam(defaultValue = "day") String period) {
+        return ApiResponse.ok(app.statisticsReport(user, period));
     }
 
     @GetMapping("/admin/statistics/credit")
@@ -309,8 +336,9 @@ public class AppController {
     }
 
     @GetMapping("/admin/statistics/export")
-    public ResponseEntity<byte[]> export(@AuthenticationPrincipal CurrentUser user) {
-        byte[] bytes = ("\uFEFF" + app.exportCsv(user)).getBytes(StandardCharsets.UTF_8);
+    public ResponseEntity<byte[]> export(@AuthenticationPrincipal CurrentUser user,
+                                         @RequestParam(defaultValue = "day") String period) {
+        byte[] bytes = ("\uFEFF" + app.exportCsv(user, period)).getBytes(StandardCharsets.UTF_8);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=study-room-report.csv")
                 .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))

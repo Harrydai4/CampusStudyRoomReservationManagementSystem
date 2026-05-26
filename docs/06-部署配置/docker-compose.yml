@@ -1,4 +1,5 @@
-# 可选：用 Docker 启动 MySQL，免本机安装。
+# 可选：用 Docker 启动 MySQL，免本机安装（单人本机开发用）。
+# 多人共用库请改用：docker-compose.shared.yml + scripts/setup-shared-mysql-docker.ps1
 # 用法（需已安装 Docker Desktop）：
 #   cd docs/06-部署配置
 #   docker compose up -d

@@ -20,6 +20,7 @@ public class ScheduledTaskService {
     @Scheduled(cron = "0 * * * * *")
     public void runMaintenanceTasks() {
         try {
+            appService.scheduledProcessInvalidCheckin();
             appService.scheduledProcessNoShow();
             appService.scheduledProcessAutoCheckout();
             appService.scheduledProcessBlacklistRelease();

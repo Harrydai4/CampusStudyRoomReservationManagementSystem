@@ -23,7 +23,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/", "/index.html", "/assets/**", "/favicon.ico", "/uploads/**").permitAll()
-                        .requestMatchers("/api/auth/**", "/api/admin/auth/**").permitAll()
+                        .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/register/upload").permitAll()
+                        .requestMatchers("/api/admin/auth/login").permitAll()
                         .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "SUPER_ADMIN")
                         .requestMatchers("/api/**").authenticated()
                         .anyRequest().permitAll()

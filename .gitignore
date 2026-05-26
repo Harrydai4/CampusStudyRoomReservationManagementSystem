@@ -5,10 +5,13 @@ target/
 .tools/
 *.zip
 *.log
+backups/
 frontend/node_modules/
 uploads/*
 !uploads/README.md
 application-local.properties
+application-shared.properties
+SHARED_DATABASE.txt
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/

@@ -1,7 +1,7 @@
 # 校园自习室预约管理系统（CSRRMupdate）
 
 > **唯一开发目录**：`D:\SchoolWorkPlace\Database\CSRRMupdate`  
-> **版本**：V1.1 · Spring Boot 3.5 + Vue 3 + MySQL 8
+> **版本**：V1.2 · Spring Boot 3.5 + Vue 3 + MySQL 8
 
 ---
 
@@ -17,7 +17,13 @@
 
 **启动流程（可复制 PowerShell）** → [05-启动流程与PowerShell命令](docs/01-使用指南/05-启动流程与PowerShell命令.md)
 
+**数据库 SQL（课设必交）** → [数据库文件说明](docs/06-部署配置/数据库文件说明.md)
+
 **GitHub 组员提交（Fork + PR）** → [06-GitHub傻瓜式提交全流程](docs/01-使用指南/06-GitHub傻瓜式提交全流程.md)
+
+**全组共用一套数据库** → [07-多人共用一套系统与数据库](docs/01-使用指南/07-多人共用一套系统与数据库.md)
+
+**不同 WiFi / 安全公网访问** → [08-跨WiFi共用与安全访问](docs/01-使用指南/08-跨WiFi共用与安全访问.md)
 
 ---
 
@@ -34,7 +40,13 @@ CSRRMupdate/
 └── pom.xml         # Maven 配置
 ```
 
-> **V1.1 前端已打包**：可直接 `spring-boot:run` 后访问 **[http://localhost:8080](http://localhost:8080)**，不必再开 5173（开发改 UI 时仍可用 `npm run dev`）。
+> **V1.2 前端已打包**；**含 schema.sql / data.sql 数据库交付物**。可直接 `spring-boot:run` 后访问 **[http://localhost:8080](http://localhost:8080)**，不必再开 5173（开发改 UI 时仍可用 `npm run dev`）。
+
+**首次 clone 建议先导入数据库**：
+
+```powershell
+.\scripts\import-database-local.ps1
+```
 
 详细说明 → [目录结构说明](docs/02-架构说明/02-目录结构说明.md)
 
@@ -66,6 +78,19 @@ cd D:\SchoolWorkPlace\Database\CSRRMupdate
 ```
 
 浏览器：**http://localhost:8080**（建议 Ctrl+F5 强刷）
+
+### 全组共用一套库（一台服务器 + 其他人只开浏览器）
+
+```powershell
+cd D:\SchoolWorkPlace\Database\CSRRMupdate
+.\scripts\setup-shared-mysql-docker.ps1
+Copy-Item src\main\resources\application-shared.properties.example src\main\resources\application-shared.properties
+notepad src\main\resources\application-shared.properties
+.\scripts\open-firewall-shared.ps1   # 管理员 PowerShell
+.\scripts\start-shared-server.ps1
+```
+
+详见 **[07-多人共用一套系统与数据库.md](docs/01-使用指南/07-多人共用一套系统与数据库.md)**。
 
 ### 改前端时（8080 + 5173 两个窗口）
 
@@ -108,7 +133,7 @@ cd D:\SchoolWorkPlace\Database\CSRRMupdate
 
 ---
 
-## 验收清单（V1.1）
+## 验收清单（V1.2）
 
 - 学生：登录 → 预约 → 二维码 → 管理员签到 → 暂离 → 返回 → 签退
 - 学生：个人信息修改并保存

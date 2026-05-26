@@ -3,6 +3,7 @@ package com.scau.campusstudyroomreservationmanagementsystem.service;
 import com.scau.campusstudyroomreservationmanagementsystem.config.JwtService;
 import com.scau.campusstudyroomreservationmanagementsystem.support.BusinessException;
 import com.scau.campusstudyroomreservationmanagementsystem.support.CurrentUser;
+import com.scau.campusstudyroomreservationmanagementsystem.support.SqlFragments;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -19,6 +20,12 @@ import java.util.*;
 
 @Service
 public class AppService {
+    /** 预约开始前可签到分钟数（与前端提示一致） */
+    private static final int CHECKIN_EARLY_MINUTES = 15;
+    /** 预约开始后可签到分钟数 */
+    private static final int CHECKIN_LATE_MINUTES = 15;
+    private static final DateTimeFormatter CHECKIN_WINDOW_FMT = DateTimeFormatter.ofPattern("HH:mm");
+
     private final JdbcTemplate jdbc;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
@@ -62,6 +69,9 @@ public class AppService {
         }
         if ("DISABLED".equals(status)) {
             throw new BusinessException(403, "账号已禁用，请联系管理员");
+        }
+        if ("BLACKLIST".equals(status)) {
+            throw new BusinessException(403, "账号处于黑名单，请联系管理员解除");
         }
         jdbc.update("update user_account set last_login_at=?,updated_at=? where id=?", LocalDateTime.now(), LocalDateTime.now(), account.get("id"));
         Map<String, Object> profile = one("select * from student_profile where user_id=?", account.get("id"));
@@ -255,7 +265,7 @@ public class AppService {
             throw new BusinessException(409, "当前预约不能取消");
         }
         jdbc.update("update reservation set status='CANCELLED',cancel_reason='学生主动取消',updated_at=? where id=?", LocalDateTime.now(), id);
-        jdbc.update("update reservation_slot set status='RELEASED' where reservation_id=?", id);
+        releaseReservationSlots(id);
     }
 
     public Map<String, Object> qrCode(CurrentUser user) {
@@ -265,8 +275,11 @@ public class AppService {
         }
         Map<String, Object> profile = studentInfo(user);
         Map<String, Object> reservation = pending.get(0);
+        ensureWithinCheckinWindow(reservation);
         Long reservationId = num(reservation.get("id"));
         long now = System.currentTimeMillis();
+        LocalDateTime windowStart = checkinWindowStart(reservation);
+        LocalDateTime windowEnd = checkinWindowEnd(reservation);
         String payload = String.join(":",
                 String.valueOf(user.id()),
                 String.valueOf(reservationId),
@@ -287,6 +300,8 @@ public class AppService {
         result.put("generatedAt", now);
         result.put("expireAt", now + 60_000);
         result.put("expireSeconds", 60);
+        result.put("checkinWindowStart", windowStart);
+        result.put("checkinWindowEnd", windowEnd);
         return result;
     }
 
@@ -309,7 +324,7 @@ public class AppService {
         jdbc.update("update reservation set status='COMPLETED',sign_out_time=?,actual_minutes=?,updated_at=? where id=?",
                 now, minutes, now, id);
         jdbc.update("update checkin_record set checkout_time=? where reservation_id=?", now, id);
-        jdbc.update("update reservation_slot set status='RELEASED' where reservation_id=?", id);
+        releaseReservationSlots(id);
         Map<String, Object> summary = reservationDetail(id);
         summary.put("actualMinutes", minutes);
         return summary;
@@ -407,9 +422,40 @@ public class AppService {
         return jdbc.queryForList("select * from feedback_ticket where user_id=? order by created_at desc", user.id());
     }
 
+    public void changePassword(CurrentUser user, Map<String, Object> req) {
+        String oldPassword = text(req, "oldPassword");
+        String newPassword = text(req, "newPassword");
+        if (oldPassword.isBlank() || newPassword.isBlank()) {
+            throw new BusinessException(400, "请填写原密码和新密码");
+        }
+        if (newPassword.length() < 6 || newPassword.length() > 20) {
+            throw new BusinessException(400, "新密码长度需为 6-20 位");
+        }
+        if (!newPassword.matches(".*[A-Za-z].*") || !newPassword.matches(".*\\d.*")) {
+            throw new BusinessException(400, "新密码需同时包含字母和数字");
+        }
+        Map<String, Object> account;
+        if (user.isStudent()) {
+            account = one("select password_hash from user_account where id=?", user.id());
+        } else {
+            account = one("select password_hash from admin_account where id=?", user.id());
+        }
+        if (account == null || !passwordEncoder.matches(oldPassword, String.valueOf(account.get("password_hash")))) {
+            throw new BusinessException(400, "原密码不正确");
+        }
+        String hash = passwordEncoder.encode(newPassword);
+        LocalDateTime now = LocalDateTime.now();
+        if (user.isStudent()) {
+            jdbc.update("update user_account set password_hash=?,updated_at=? where id=?", hash, now, user.id());
+        } else {
+            jdbc.update("update admin_account set password_hash=?,updated_at=? where id=?", hash, now, user.id());
+        }
+        writeOperationLog(user, "AUTH", "CHANGE_PASSWORD", user.isStudent() ? "STUDENT" : "ADMIN", user.id(), "修改登录密码");
+    }
+
     public Map<String, Object> dashboard(CurrentUser admin) {
-        String roomFilter = admin.isSuperAdmin() ? "" : " where manager_id=" + admin.id();
-        String reservationRoomFilter = admin.isSuperAdmin() ? "" : " and sr.manager_id=" + admin.id();
+        String roomFilter = sqlStudyRoomScope(admin);
+        String reservationRoomFilter = sqlReservationRoomScope(admin);
         Integer roomCount = jdbc.queryForObject("select count(*) from study_room" + roomFilter, Integer.class);
         Integer pendingUsers = jdbc.queryForObject("select count(*) from student_profile where audit_status='PENDING'", Integer.class);
         Integer todayReservations = jdbc.queryForObject("select count(*) from reservation where reserve_date=?", Integer.class, Date.valueOf(LocalDate.now()));
@@ -429,28 +475,25 @@ public class AppService {
                 where r.reserve_date=? and r.status in ('USING','COMPLETED','AUTO_CHECKOUT','TEMP_LEAVE')""" + reservationRoomFilter,
                 Integer.class, Date.valueOf(LocalDate.now()));
         double seatUsageRate = totalSeats == null || totalSeats == 0 ? 0 : Math.round(usedToday * 1000.0 / totalSeats) / 10.0;
-        List<Map<String, Object>> weeklyTrend = jdbc.queryForList("""
+        String weeklyWhere = sqlWhereWithRoomScope(admin, "r",
+                "r.reserve_date between date_sub(current_date(), interval 6 day) and current_date()");
+        String weeklySql = sqlJoin("""
                 select date_format(r.reserve_date,'%m-%d') label, count(*) count
                 from reservation r
-                join study_room sr on sr.id=r.room_id
-                where r.reserve_date between date_sub(current_date(), interval 6 day) and current_date()
-                """ + reservationRoomFilter + """
-                group by r.reserve_date
-                order by r.reserve_date
-                """);
-        List<Map<String, Object>> liveReservations = jdbc.queryForList("""
+                join study_room sr on sr.id=r.room_id""", weeklyWhere,
+                "group by r.reserve_date", "order by r.reserve_date");
+        List<Map<String, Object>> weeklyTrend = jdbc.queryForList(weeklySql);
+        String liveWhere = sqlWhereWithRoomScope(admin, "r", "r.status in ('PENDING','USING','TEMP_LEAVE')");
+        String liveSql = sqlJoin("""
                 select r.id, r.reservation_no reservationNo, r.status, r.reserve_date reserveDate,
                        r.start_time startTime, r.end_time endTime,
                        sp.student_no studentNo, sp.name studentName, sr.name roomName, s.seat_no seatNo
                 from reservation r
                 join student_profile sp on sp.user_id=r.user_id
                 join study_room sr on sr.id=r.room_id
-                join seat s on s.id=r.seat_id
-                where r.status in ('PENDING','USING','TEMP_LEAVE')
-                """ + reservationRoomFilter + """
-                order by r.reserve_date, r.start_time
-                limit 20
-                """);
+                join seat s on s.id=r.seat_id""", liveWhere,
+                "order by r.reserve_date, r.start_time", "limit 20");
+        List<Map<String, Object>> liveReservations = jdbc.queryForList(liveSql);
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("roomCount", roomCount);
         result.put("pendingUsers", pendingUsers);
@@ -461,8 +504,8 @@ public class AppService {
         result.put("seatUsageRate", seatUsageRate);
         result.put("weeklyTrend", weeklyTrend);
         result.put("liveReservations", liveReservations);
-        result.put("usage", statisticsUsage(admin));
-        result.put("peak", statisticsPeak(admin));
+        result.put("usage", statisticsUsage(admin, "day"));
+        result.put("peak", statisticsPeak(admin, "day"));
         return result;
     }
 
@@ -501,9 +544,6 @@ public class AppService {
 
     @Transactional
     public Map<String, Object> saveRoom(CurrentUser admin, Long id, Map<String, Object> req) {
-        if (id == null && !admin.isSuperAdmin()) {
-            throw new BusinessException(403, "仅超级管理员可新增自习室");
-        }
         Long managerId = admin.isSuperAdmin() ? nullableLong(req, "managerId") : admin.id();
         if (managerId == null) {
             managerId = admin.id();
@@ -539,10 +579,10 @@ public class AppService {
     }
 
     public void deleteRoom(CurrentUser admin, Long id) {
-        if (!admin.isSuperAdmin()) {
-            throw new BusinessException(403, "仅超级管理员可删除自习室");
-        }
         Map<String, Object> roomInfo = room(id);
+        if (!admin.isSuperAdmin() && !Objects.equals(num(roomInfo.get("manager_id")), admin.id())) {
+            throw new BusinessException(403, "无权限删除该自习室");
+        }
         Integer pending = jdbc.queryForObject("select count(*) from reservation where room_id=? and status in ('PENDING','USING','TEMP_LEAVE')", Integer.class, id);
         if (pending != null && pending > 0) {
             throw new BusinessException(409, "该自习室有未完成预约，不能删除");
@@ -561,6 +601,70 @@ public class AppService {
                 intText(req, "hotSeat", 0), text(req, "status", "NORMAL"), LocalDateTime.now(), id);
     }
 
+    @Transactional
+    public Map<String, Object> addSeat(CurrentUser admin, Long roomId) {
+        assertRoomManager(admin, roomId);
+        Map<String, Object> roomInfo = room(roomId);
+        int rows = intValue(roomInfo.get("row_count"));
+        int cols = intValue(roomInfo.get("col_count"));
+        Integer existing = jdbc.queryForObject("select count(*) from seat where room_id=?", Integer.class, roomId);
+        int count = existing == null ? 0 : existing;
+        int nextIndex = count + 1;
+        if (nextIndex > rows * cols) {
+            cols += 1;
+            jdbc.update("update study_room set col_count=?,cell_count=?,seat_count=?,updated_at=? where id=?",
+                    cols, rows * cols, rows * cols, LocalDateTime.now(), roomId);
+        }
+        int rowNo = ((nextIndex - 1) / cols) + 1;
+        int colNo = ((nextIndex - 1) % cols) + 1;
+        String prefix = String.valueOf(roomInfo.get("room_code")).replaceAll("[^A-Za-z0-9]", "");
+        if (prefix.isBlank()) {
+            prefix = "S";
+        }
+        String seatNo = prefix + "-" + String.format("%02d", nextIndex);
+        LocalDateTime now = LocalDateTime.now();
+        jdbc.update("""
+                insert into seat(room_id,seat_no,row_no,col_no,is_seat,cell_category,seat_type,has_power,near_window,quiet_zone,hot_seat,status,created_at,updated_at)
+                values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                """, roomId, seatNo, rowNo, colNo, 1, "SEAT", "普通座位", colNo % 2 == 0 ? 1 : 0,
+                colNo == 1 || colNo == cols ? 1 : 0, rowNo <= 2 ? 1 : 0, 0, "NORMAL", now, now);
+        Long seatId = jdbc.queryForObject("select id from seat where room_id=? and seat_no=? order by id desc limit 1", Long.class, roomId, seatNo);
+        jdbc.update("update study_room set seat_count=(select count(*) from seat where room_id=? and is_seat=1), updated_at=? where id=?",
+                roomId, now, roomId);
+        writeOperationLog(admin, "SEAT", "CREATE", "SEAT", seatId, seatNo);
+        return one("select * from seat where id=?", seatId);
+    }
+
+    @Transactional
+    public void deleteSeat(CurrentUser admin, Long seatId) {
+        Map<String, Object> seat = one("select s.*, sr.manager_id from seat s join study_room sr on sr.id=s.room_id where s.id=?", seatId);
+        if (seat == null) {
+            throw new BusinessException(404, "座位不存在");
+        }
+        if (!admin.isSuperAdmin() && !Objects.equals(num(seat.get("manager_id")), admin.id())) {
+            throw new BusinessException(403, "无权限删除该座位");
+        }
+        Integer active = jdbc.queryForObject("""
+                select count(*) from reservation r
+                where r.seat_id=? and r.status in ('PENDING','USING','TEMP_LEAVE')
+                """, Integer.class, seatId);
+        if (active != null && active > 0) {
+            throw new BusinessException(409, "该座位存在进行中的预约，无法删除");
+        }
+        Long roomId = num(seat.get("room_id"));
+        jdbc.update("delete from seat where id=?", seatId);
+        jdbc.update("update study_room set seat_count=(select count(*) from seat where room_id=? and is_seat=1), updated_at=? where id=?",
+                roomId, LocalDateTime.now(), roomId);
+        writeOperationLog(admin, "SEAT", "DELETE", "SEAT", seatId, String.valueOf(seat.get("seat_no")));
+    }
+
+    private void assertRoomManager(CurrentUser admin, Long roomId) {
+        Map<String, Object> roomInfo = room(roomId);
+        if (!admin.isSuperAdmin() && !Objects.equals(num(roomInfo.get("manager_id")), admin.id())) {
+            throw new BusinessException(403, "无权限管理该自习室座位");
+        }
+    }
+
     public void batchSeats(Long roomId, Map<String, Object> req) {
         jdbc.update("update seat set seat_type=?,has_power=?,near_window=?,quiet_zone=?,hot_seat=?,status=?,updated_at=? where room_id=?",
                 text(req, "seatType", "普通座位"), intText(req, "hasPower", 0), intText(req, "nearWindow", 0),
@@ -568,14 +672,15 @@ public class AppService {
     }
 
     public List<Map<String, Object>> adminReservations(CurrentUser admin) {
-        String extra = admin.isSuperAdmin() ? "" : " where sr.manager_id=" + admin.id();
-        return jdbc.queryForList("""
+        String extra = admin.isSuperAdmin() ? "" : sqlJoin("where", "sr.manager_id=" + admin.id());
+        String reservationSql = sqlJoin("""
                 select r.*, sp.student_no studentNo, sp.name studentName, sr.name roomName, s.seat_no seatNo
                 from reservation r
                 join student_profile sp on sp.user_id=r.user_id
                 join study_room sr on sr.id=r.room_id
-                join seat s on s.id=r.seat_id
-                """ + extra + " order by r.reserve_date desc,r.start_time desc");
+                join seat s on s.id=r.seat_id""", extra,
+                "order by r.reserve_date desc, r.start_time desc");
+        return jdbc.queryForList(reservationSql);
     }
 
     @Transactional
@@ -614,9 +719,11 @@ public class AppService {
         if (!"PENDING".equals(String.valueOf(r.get("status")))) {
             throw new BusinessException(409, "该预约不能签到");
         }
+        ensureWithinCheckinWindow(r);
         LocalDateTime now = LocalDateTime.now();
         Long rid = num(r.get("id"));
         Long uid = num(r.get("user_id"));
+        jdbc.update("delete from checkin_record where reservation_id=?", rid);
         jdbc.update("update reservation set status='USING',sign_in_time=?,updated_at=? where id=?", now, now, rid);
         jdbc.update("insert into checkin_record(reservation_id,user_id,admin_id,checkin_method,checkin_time,result) values(?,?,?,?,?,?)",
                 rid, uid, admin.id(), "QR_SCAN", now, "ON_TIME");
@@ -625,15 +732,15 @@ public class AppService {
     }
 
     public List<Map<String, Object>> checkins(CurrentUser admin) {
-        String extra = admin.isSuperAdmin() ? "" : " where c.admin_id=" + admin.id();
-        return jdbc.queryForList("""
+        String extra = admin.isSuperAdmin() ? "" : sqlJoin("where", "c.admin_id=" + admin.id());
+        String checkinSql = sqlJoin("""
                 select c.*, sp.student_no studentNo, sp.name studentName, sr.name roomName, s.seat_no seatNo
                 from checkin_record c
                 join reservation r on r.id=c.reservation_id
                 join student_profile sp on sp.user_id=c.user_id
                 join study_room sr on sr.id=r.room_id
-                join seat s on s.id=r.seat_id
-                """ + extra + " order by c.checkin_time desc");
+                join seat s on s.id=r.seat_id""", extra, "order by c.checkin_time desc");
+        return jdbc.queryForList(checkinSql);
     }
 
     public Map<String, Object> saveAnnouncement(CurrentUser admin, Long id, Map<String, Object> req) {
@@ -655,25 +762,110 @@ public class AppService {
         jdbc.update("update announcement set status='DELETED',updated_at=? where id=?", LocalDateTime.now(), id);
     }
 
-    public List<Map<String, Object>> statisticsUsage(CurrentUser admin) {
-        String extra = admin.isSuperAdmin() ? "" : " where sr.manager_id=" + admin.id();
-        return jdbc.queryForList("""
+    public List<Map<String, Object>> statisticsUsage(CurrentUser admin, String period) {
+        String extra = sqlStudyRoomScopeForReservationJoin(admin);
+        String dateJoin = reservationDateJoinCondition(period);
+        String joinOn = sqlJoin("r.room_id=sr.id", "and", dateJoin);
+        String usageSql = sqlJoin("""
                 select sr.name roomName, sr.seat_count seatCount,
                   count(r.id) reservationCount,
                   sum(case when r.status in ('USING','COMPLETED','AUTO_CHECKOUT') then 1 else 0 end) usedCount,
                   round(if(sr.seat_count=0,0,count(r.id)/sr.seat_count*100),1) usageRate
-                from study_room sr left join reservation r on r.room_id=sr.id and r.reserve_date=current_date()
-                """ + extra + " group by sr.id,sr.name,sr.seat_count order by sr.id");
+                from study_room sr left join reservation r on""", joinOn, extra,
+                "group by sr.id,sr.name,sr.seat_count", "order by sr.id");
+        return jdbc.queryForList(usageSql);
     }
 
-    public List<Map<String, Object>> statisticsPeak(CurrentUser admin) {
-        return jdbc.queryForList("""
-                select hour(start_time) hour, count(*) count
-                from reservation
-                where reserve_date between date_sub(current_date(), interval 30 day) and current_date()
-                group by hour(start_time)
-                order by hour
-                """);
+    public List<Map<String, Object>> statisticsPeak(CurrentUser admin, String period) {
+        String dateWhere = reservationDateWhereCondition(period, "r");
+        String whereClause = sqlWhereWithRoomScope(admin, "r", dateWhere);
+        String peakSql = sqlJoin("""
+                select hour(r.start_time) hour, count(*) count
+                from reservation r
+                join study_room sr on sr.id=r.room_id""", whereClause,
+                "group by hour(r.start_time)", "order by hour");
+        return jdbc.queryForList(peakSql);
+    }
+
+    public List<Map<String, Object>> statisticsTrend(CurrentUser admin, String period) {
+        if ("day".equalsIgnoreCase(period)) {
+            String whereClause = sqlWhereWithRoomScope(admin, "r", "r.reserve_date=current_date()");
+            String daySql = sqlJoin("""
+                    select concat(lpad(hour(r.start_time),2,'0'),':00') label, count(*) count
+                    from reservation r join study_room sr on sr.id=r.room_id""", whereClause,
+                    "group by hour(r.start_time)", "order by hour(r.start_time)");
+            return jdbc.queryForList(daySql);
+        }
+        String dateWhere = reservationDateWhereCondition(period, "r");
+        String whereClause = sqlWhereWithRoomScope(admin, "r", dateWhere);
+        String trendSql = sqlJoin("""
+                select date_format(r.reserve_date,'%m-%d') label, count(*) count
+                from reservation r join study_room sr on sr.id=r.room_id""", whereClause,
+                "group by r.reserve_date", "order by r.reserve_date");
+        return jdbc.queryForList(trendSql);
+    }
+
+    public Map<String, Object> statisticsReport(CurrentUser admin, String period) {
+        String p = period == null || period.isBlank() ? "day" : period.toLowerCase();
+        List<Map<String, Object>> usage = statisticsUsage(admin, p);
+        List<Map<String, Object>> peak = statisticsPeak(admin, p);
+        List<Map<String, Object>> trend = statisticsTrend(admin, p);
+        String dateWhere = reservationDateWhereCondition(p, "r");
+        String whereClause = sqlWhereWithRoomScope(admin, "r", dateWhere);
+        String countFrom = "select count(*) from reservation r join study_room sr on sr.id=r.room_id";
+        Integer totalReserve = jdbc.queryForObject(sqlJoin(countFrom, whereClause), Integer.class);
+        Integer usingCount = jdbc.queryForObject(
+                sqlJoin(countFrom, whereClause, "and r.status in ('USING','TEMP_LEAVE')"), Integer.class);
+        Integer checkedIn = jdbc.queryForObject(
+                sqlJoin(countFrom, whereClause, "and r.status in ('USING','COMPLETED','AUTO_CHECKOUT','TEMP_LEAVE')"),
+                Integer.class);
+        int total = totalReserve == null ? 0 : totalReserve;
+        int checked = checkedIn == null ? 0 : checkedIn;
+        int checkinRate = total == 0 ? 0 : (int) (Math.round(checked * 1000.0 / total) / 10);
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("period", p);
+        summary.put("periodLabel", periodLabel(p));
+        summary.put("totalReserve", total);
+        summary.put("usingCount", usingCount == null ? 0 : usingCount);
+        summary.put("checkinRate", checkinRate);
+        summary.put("avgCredit", averageCreditScore());
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("summary", summary);
+        result.put("usage", usage);
+        result.put("peak", peak);
+        result.put("trend", trend);
+        result.put("credit", statisticsCredit());
+        return result;
+    }
+
+    private int averageCreditScore() {
+        Integer avg = jdbc.queryForObject("select round(avg(credit_score)) from student_profile", Integer.class);
+        return avg == null ? 0 : avg;
+    }
+
+    private String periodLabel(String period) {
+        return switch (period) {
+            case "week" -> "近7天";
+            case "month" -> "本月";
+            default -> "今日";
+        };
+    }
+
+    private String reservationDateJoinCondition(String period) {
+        return switch (period == null ? "day" : period.toLowerCase()) {
+            case "week" -> "r.reserve_date between date_sub(current_date(), interval 6 day) and current_date()";
+            case "month" -> "r.reserve_date between date_format(current_date(), '%Y-%m-01') and current_date()";
+            default -> "r.reserve_date=current_date()";
+        };
+    }
+
+    private String reservationDateWhereCondition(String period, String alias) {
+        String col = alias + ".reserve_date";
+        return switch (period == null ? "day" : period.toLowerCase()) {
+            case "week" -> col + " between date_sub(current_date(), interval 6 day) and current_date()";
+            case "month" -> col + " between date_format(current_date(), '%Y-%m-01') and current_date()";
+            default -> col + "=current_date()";
+        };
     }
 
     public List<Map<String, Object>> statisticsCredit() {
@@ -688,19 +880,33 @@ public class AppService {
     }
 
     public List<Map<String, Object>> adminFeedback(CurrentUser admin) {
-        String extra = admin.isSuperAdmin() ? "" : " where (f.room_id is null or sr.manager_id=" + admin.id() + ")";
-        return jdbc.queryForList("""
+        String extra = admin.isSuperAdmin() ? "" : sqlJoin("where", "(f.room_id is null or sr.manager_id=" + admin.id() + ")");
+        String feedbackSql = sqlJoin("""
                 select f.*, sp.student_no studentNo, sp.name studentName, sr.name roomName, s.seat_no seatNo
                 from feedback_ticket f
                 join student_profile sp on sp.user_id=f.user_id
                 left join study_room sr on sr.id=f.room_id
-                left join seat s on s.id=f.seat_id
-                """ + extra + " order by f.created_at desc");
+                left join seat s on s.id=f.seat_id""", extra, "order by f.created_at desc");
+        return jdbc.queryForList(feedbackSql);
     }
 
     public void handleFeedback(CurrentUser admin, Long id, Map<String, Object> req) {
+        Map<String, Object> ticket = one("select * from feedback_ticket where id=?", id);
+        if (ticket == null) {
+            throw new BusinessException(404, "反馈不存在");
+        }
+        if ("DONE".equals(String.valueOf(ticket.get("status"))) || "CLOSED".equals(String.valueOf(ticket.get("status")))) {
+            throw new BusinessException(409, "该反馈已处理完成");
+        }
+        String result = text(req, "handleResult", "已处理并记录");
+        if (result.isBlank()) {
+            throw new BusinessException(400, "请填写处理说明");
+        }
         jdbc.update("update feedback_ticket set status=?,handler_id=?,handle_result=?,handled_at=? where id=?",
-                text(req, "status", "DONE"), admin.id(), text(req, "handleResult", "已处理"), LocalDateTime.now(), id);
+                text(req, "status", "DONE"), admin.id(), result, LocalDateTime.now(), id);
+        Long studentId = num(ticket.get("user_id"));
+        notifyUser(studentId, "反馈已处理", "你提交的问题反馈已由管理员处理：" + result, "FEEDBACK", id);
+        writeOperationLog(admin, "FEEDBACK", "HANDLE", "FEEDBACK", id, result);
     }
 
     public Map<String, Object> updateProfile(CurrentUser user, Map<String, Object> req) {
@@ -778,6 +984,19 @@ public class AppService {
                 """);
     }
 
+    public void scheduledProcessInvalidCheckin() {
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                select id, user_id, reserve_date, start_time, end_time, sign_in_time
+                from reservation where status in ('USING','TEMP_LEAVE')
+                """);
+        for (Map<String, Object> row : rows) {
+            LocalDateTime signIn = toLocalDateTime(row.get("sign_in_time"));
+            if (signIn == null || !isWithinCheckinWindow(row, signIn)) {
+                revertInvalidCheckin(num(row.get("id")), num(row.get("user_id")));
+            }
+        }
+    }
+
     public void scheduledProcessNoShow() {
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(15);
         List<Map<String, Object>> rows = jdbc.queryForList("""
@@ -794,7 +1013,7 @@ public class AppService {
             Long userId = num(row.get("user_id"));
             jdbc.update("update reservation set status='VIOLATED',cancel_reason='超时未签到',updated_at=? where id=? and status='PENDING'",
                     LocalDateTime.now(), id);
-            jdbc.update("update reservation_slot set status='RELEASED' where reservation_id=?", id);
+            releaseReservationSlots(id);
             changeCredit(userId, -50, "NO_SHOW", "预约超时未签到", id);
             notifyUser(userId, "预约违约", "你有一条预约因超时未签到被判定违约，已扣除 50 信用分。", "VIOLATION", id);
         }
@@ -850,9 +1069,10 @@ public class AppService {
         }
     }
 
-    public String exportCsv(CurrentUser admin) {
-        StringBuilder csv = new StringBuilder("自习室,总座位,预约数,实际使用数,使用率\n");
-        for (Map<String, Object> row : statisticsUsage(admin)) {
+    public String exportCsv(CurrentUser admin, String period) {
+        String label = periodLabel(period == null ? "day" : period.toLowerCase());
+        StringBuilder csv = new StringBuilder("统计周期,").append(label).append("\n自习室,总座位,预约数,实际使用数,使用率\n");
+        for (Map<String, Object> row : statisticsUsage(admin, period)) {
             csv.append(row.get("roomName")).append(',')
                     .append(row.get("seatCount")).append(',')
                     .append(row.get("reservationCount")).append(',')
@@ -862,14 +1082,73 @@ public class AppService {
         return csv.toString();
     }
 
+    private LocalDateTime reservationStartAt(Map<String, Object> r) {
+        return LocalDateTime.of(
+                ((Date) r.get("reserve_date")).toLocalDate(),
+                ((Time) r.get("start_time")).toLocalTime());
+    }
+
+    private LocalDateTime reservationEndAt(Map<String, Object> r) {
+        return LocalDateTime.of(
+                ((Date) r.get("reserve_date")).toLocalDate(),
+                ((Time) r.get("end_time")).toLocalTime());
+    }
+
+    private LocalDateTime checkinWindowStart(Map<String, Object> r) {
+        return reservationStartAt(r).minusMinutes(CHECKIN_EARLY_MINUTES);
+    }
+
+    private LocalDateTime checkinWindowEnd(Map<String, Object> r) {
+        return reservationStartAt(r).plusMinutes(CHECKIN_LATE_MINUTES);
+    }
+
+    private boolean isWithinCheckinWindow(Map<String, Object> r, LocalDateTime at) {
+        return !at.isBefore(checkinWindowStart(r)) && !at.isAfter(checkinWindowEnd(r));
+    }
+
+    private void ensureWithinCheckinWindow(Map<String, Object> r) {
+        LocalDateTime now = LocalDateTime.now();
+        if (isWithinCheckinWindow(r, now)) {
+            return;
+        }
+        LocalDateTime start = checkinWindowStart(r);
+        LocalDateTime end = checkinWindowEnd(r);
+        throw new BusinessException(400, String.format(
+                "当前不在签到时间内，请在 %s %s 至 %s 之间签到",
+                ((Date) r.get("reserve_date")).toLocalDate(),
+                start.format(CHECKIN_WINDOW_FMT),
+                end.format(CHECKIN_WINDOW_FMT)));
+    }
+
+    private void revertInvalidCheckin(Long reservationId, Long userId) {
+        jdbc.update("delete from checkin_record where reservation_id=?", reservationId);
+        jdbc.update("update temp_leave set leave_status='CANCELLED',return_time=? where reservation_id=? and leave_status='ACTIVE'",
+                LocalDateTime.now(), reservationId);
+        int updated = jdbc.update(
+                "update reservation set status='PENDING',sign_in_time=null,updated_at=? where id=? and status in ('USING','TEMP_LEAVE')",
+                LocalDateTime.now(), reservationId);
+        if (updated > 0) {
+            changeCredit(userId, -5, "INVALID_CHECKIN_REVERT", "无效签到已撤销", reservationId);
+            notifyUser(userId, "签到无效", "你的签到不在有效时间内，已恢复为待签到状态。", "CHECKIN", reservationId);
+        }
+    }
+
     private void autoCheckoutReservation(Long reservationId, Long userId, LocalDateTime signIn, LocalDateTime checkoutAt,
                                          String status, String reason) {
         int minutes = signIn == null ? 0 : (int) Math.max(0, Duration.between(signIn, checkoutAt).toMinutes());
         jdbc.update("update reservation set status=?,sign_out_time=?,actual_minutes=?,updated_at=? where id=? and status in ('USING','TEMP_LEAVE')",
                 status, checkoutAt, minutes, LocalDateTime.now(), reservationId);
         jdbc.update("update checkin_record set checkout_time=? where reservation_id=?", checkoutAt, reservationId);
-        jdbc.update("update reservation_slot set status='RELEASED' where reservation_id=?", reservationId);
+        releaseReservationSlots(reservationId);
         notifyUser(userId, "自动签退", reason, "CHECKOUT", reservationId);
+    }
+
+    /** 释放预约占用的座位时间片（直接删除，避免 RELEASED 与唯一索引冲突） */
+    private void releaseReservationSlots(Long reservationId) {
+        if (reservationId == null) {
+            return;
+        }
+        jdbc.update("delete from reservation_slot where reservation_id=?", reservationId);
     }
 
     private void notifyUser(Long userId, String title, String content, String type, Long relatedId) {
@@ -921,6 +1200,34 @@ public class AppService {
                     userId, LocalDateTime.now(), LocalDateTime.now().plusDays(7), "信用积分小于等于0", "ACTIVE");
             jdbc.update("update user_account set status='BLACKLIST',updated_at=? where id=?", LocalDateTime.now(), userId);
         }
+    }
+
+    private static String sqlJoin(String... parts) {
+        return SqlFragments.join(parts);
+    }
+
+    /** WHERE 子句 + 普通管理员自习室范围（统一走 SqlFragments，避免拼接粘连） */
+    private String sqlWhereWithRoomScope(CurrentUser admin, String reservationAlias, String datePredicate) {
+        String clause = sqlJoin("where", datePredicate);
+        if (!admin.isSuperAdmin()) {
+            clause = sqlJoin(clause, "and", "sr.manager_id=" + admin.id());
+        }
+        return clause;
+    }
+
+    /** 用于 study_room LEFT JOIN reservation 后的 WHERE（仅管理员范围，无日期） */
+    private String sqlStudyRoomScopeForReservationJoin(CurrentUser admin) {
+        return admin.isSuperAdmin() ? "" : " where sr.manager_id=" + admin.id();
+    }
+
+    /** 自习室表范围：普通管理员仅看自己管理的自习室 */
+    private String sqlStudyRoomScope(CurrentUser admin) {
+        return admin.isSuperAdmin() ? "" : " where manager_id=" + admin.id() + " ";
+    }
+
+    /** 预约联表范围：拼接在 WHERE 之后，首尾带空格，避免 SQL 粘连 */
+    private String sqlReservationRoomScope(CurrentUser admin) {
+        return admin.isSuperAdmin() ? "" : " and sr.manager_id=" + admin.id() + " ";
     }
 
     private List<LocalDateTime> slots(LocalDate date, LocalTime start, LocalTime end) {

@@ -9,7 +9,7 @@
 
 ## 你要交什么？（一句话）
 
-把 **能运行的项目 + 文档 + 已打包的前端** 推到 GitHub；**密码、编译缓存、node_modules 不要交**。
+把 **能运行的项目 + 文档 + 已打包的前端 + 数据库 SQL（结构+演示数据）** 推到 GitHub；**密码、编译缓存、node_modules 不要交**。
 
 ---
 
@@ -17,9 +17,9 @@
 
 在 PowerShell 里输入 `git --version`，若提示「无法识别 git」，先装 Git：
 
-1. 打开 [Git for Windows 下载页](https://git-scm.com/download/win)  
-2. 一路 **Next**（默认选项即可）  
-3. **关掉所有 PowerShell 窗口，重新打开一个新的**  
+1. 打开 [Git for Windows 下载页](https://git-scm.com/download/win)
+2. 一路 **Next**（默认选项即可）
+3. **关掉所有 PowerShell 窗口，重新打开一个新的**
 4. 再执行：
 
 ```powershell
@@ -32,14 +32,14 @@ git --version
 
 ## 第 1 步：注册 GitHub 并新建空仓库
 
-1. 打开 [https://github.com](https://github.com) 注册/登录  
-2. 右上角 **+** → **New repository**  
+1. 打开 [https://github.com](https://github.com) 注册/登录
+2. 右上角 **+** → **New repository**
 3. 填写：
-   - **Repository name**：例如 `campus-study-room-reservation`
-   - **Public** 或 **Private**（按课程要求）
-   - **不要勾选**「Add a README file」（本地已有 README，避免冲突）
-   - **不要勾选**「Add .gitignore」（项目里已有）
-4. 点 **Create repository**  
+  - **Repository name**：例如 `campus-study-room-reservation`
+  - **Public** 或 **Private**（按课程要求）
+  - **不要勾选**「Add a README file」（本地已有 README，避免冲突）
+  - **不要勾选**「Add .gitignore」（项目里已有）
+4. 点 **Create repository**
 5. 创建完成后，复制页面上的 **HTTPS 地址**，形如：
 
 ```text
@@ -63,10 +63,15 @@ cd D:\SchoolWorkPlace\Database\CSRRMupdate
 # 2.1 确认密码文件存在但不会被提交（正常）
 Test-Path "src\main\resources\application-local.properties"
 
-# 2.2 跑测试 + 打包前端（约 1～3 分钟）
+# 2.2 导出/刷新数据库 SQL（V1.2 必做，组长要求；本机 MySQL 已有表和数据时执行）
+.\scripts\export-database-for-git.ps1
+
+# 2.3 跑测试 + 打包前端（约 1～3 分钟）
 .\mvnw.cmd test
 .\scripts\build-frontend.ps1
 ```
+
+`export-database-for-git.ps1` 会更新 `docs/06-部署配置/` 下的 `schema.sql`、`data.sql`、`database-full.sql`。说明见 [数据库文件说明](../06-部署配置/数据库文件说明.md)。
 
 两项都成功后再继续。
 
@@ -97,12 +102,14 @@ git status
 
 ### 你绝对不能看到（若出现 = 危险）
 
-| 若 status 里出现 | 说明 | 处理 |
-|------------------|------|------|
+
+| 若 status 里出现                   | 说明         | 处理                                             |
+| ------------------------------ | ---------- | ---------------------------------------------- |
 | `application-local.properties` | 含 MySQL 密码 | **不要** `git add` 它；确认 `.gitignore` 第 11 行有该文件名 |
-| `target/` | 编译产物 | 不应被 add（已在 ignore） |
-| `frontend/node_modules/` | 依赖包 | 不应被 add |
-| `uploads/` 里除 README 外的文件 | 运行时上传 | 不应被 add |
+| `target/`                      | 编译产物       | 不应被 add（已在 ignore）                             |
+| `frontend/node_modules/`       | 依赖包        | 不应被 add                                        |
+| `uploads/` 里除 README 外的文件      | 运行时上传      | 不应被 add                                        |
+
 
 **安全自检命令**（复制执行，应无输出或只提示 ignored）：
 
@@ -123,6 +130,7 @@ cd D:\SchoolWorkPlace\Database\CSRRMupdate
 
 git add README.md pom.xml mvnw mvnw.cmd .gitignore .mvn
 git add src frontend docs scripts uploads/README.md
+git add docs/06-部署配置/schema.sql docs/06-部署配置/data.sql docs/06-部署配置/database-full.sql
 
 # 再次确认：staging 里不应有 application-local.properties
 git status
@@ -133,7 +141,7 @@ git status
 确认无误后提交：
 
 ```powershell
-git commit -m "feat: 校园自习室预约系统 V1.1 完整交付（前后端+文档+UI对齐）"
+git commit -m "feat: CSRRM V1.2 — 共用库/签到优化 + 数据库 SQL 课设交付"
 ```
 
 若提示需要设置用户名邮箱（首次用 Git），先执行（改成你的信息）：
@@ -187,9 +195,10 @@ git push -u origin main
 打开你的仓库页面，应能看到：
 
 - 根目录有 `README.md`、`pom.xml`、`frontend/`、`docs/`  
+- `**docs/06-部署配置/` 下有 `schema.sql`、`data.sql`、`database-full.sql**`  
 - **没有** `application-local.properties`  
 - **没有** `node_modules/`、`target/`  
-- 点进 `docs/01-使用指南/` 能看到答辩清单、启动流程等  
+- 点进 `docs/01-使用指南/` 能看到答辩清单、启动流程等
 
 ---
 
@@ -206,11 +215,14 @@ Copy-Item "src\main\resources\application-local.properties.example" "src\main\re
 notepad "src\main\resources\application-local.properties"
 # 填好 MySQL 密码后保存
 
+# V1.2：先导入仓库里的数据库 SQL（推荐）
+.\scripts\import-database-local.ps1
+
 .\mvnw.cmd test
 .\mvnw.cmd spring-boot:run
 ```
 
-浏览器 **http://localhost:8080**，用学生账号 `202301010101` / `123456` 登录。  
+浏览器 **[http://localhost:8080](http://localhost:8080)**，用学生账号 `202301010101` / `123456` 登录。  
 能登录 = 提交合格。
 
 ---
@@ -219,27 +231,32 @@ notepad "src\main\resources\application-local.properties"
 
 ### ✅ 必须提交
 
-| 类别 | 路径 |
-|------|------|
-| 后端 | `src/main/java/**`、`src/test/**` |
-| 配置 | `application.properties`、`application-local.properties.example`（**只有 example**） |
-| 前端产物 | `src/main/resources/static/**`（含 `index.html`） |
-| 前端源码 | `frontend/src/**`、`package.json`、`package-lock.json`、`vite.config.js` 等 |
-| 构建 | `pom.xml`、`mvnw`、`mvnw.cmd`、`.mvn/` |
-| 文档 | `docs/**`、`README.md` |
-| 脚本 | `scripts/*.ps1` |
-| 占位 | `uploads/README.md` |
+
+| 类别          | 路径                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------ |
+| 后端          | `src/main/java/`**、`src/test/**`                                                     |
+| 配置          | `application.properties`、`application-local.properties.example`（**只有 example**）      |
+| 前端产物        | `src/main/resources/static/`**（含 `index.html`）                                       |
+| 前端源码        | `frontend/src/**`、`package.json`、`package-lock.json`、`vite.config.js` 等              |
+| 构建          | `pom.xml`、`mvnw`、`mvnw.cmd`、`.mvn/`                                                  |
+| 文档          | `docs/**`、`README.md`                                                                |
+| **数据库 SQL** | `**docs/06-部署配置/schema.sql`、`data.sql`、`database-full.sql`、`init-shared-mysql.sql`** |
+| 脚本          | `scripts/*.ps1`                                                                      |
+| 占位          | `uploads/README.md`                                                                  |
+
 
 ### ❌ 禁止提交
 
-| 路径 | 原因 |
-|------|------|
-| `application-local.properties` | **真实 MySQL 密码** |
-| `target/` | Maven 编译输出 |
-| `frontend/node_modules/` | 体积大，`npm install` 可恢复 |
-| `uploads/*`（除 README） | 运行时上传文件 |
-| `.idea/`、`.vscode/` | IDE 个人配置 |
-| 课程 Word 报告、PPT、视频 | 通常单独交，不进 Git |
+
+| 路径                             | 原因                    |
+| ------------------------------ | --------------------- |
+| `application-local.properties` | **真实 MySQL 密码**       |
+| `target/`                      | Maven 编译输出            |
+| `frontend/node_modules/`       | 体积大，`npm install` 可恢复 |
+| `uploads/`*（除 README）          | 运行时上传文件               |
+| `.idea/`、`.vscode/`            | IDE 个人配置              |
+| 课程 Word 报告、PPT、视频              | 通常单独交，不进 Git          |
+
 
 ---
 
@@ -257,11 +274,13 @@ feat: CSRRM V1.1 — 预约/签到/暂离/管理端/UI原型对齐
 
 ## 附录 C · 课程除 GitHub 外还可能要交
 
-| 材料 | 是否进 Git |
-|------|:---:|
-| 本仓库（可运行项目） | ✅ |
-| 数据库课程设计报告 Word | ❌ 单独交 |
-| 答辩 PPT / 演示视频 | ❌ 单独交 |
+
+| 材料             | 是否进 Git |
+| -------------- | ------- |
+| 本仓库（可运行项目）     | ✅       |
+| 数据库课程设计报告 Word | ❌ 单独交   |
+| 答辩 PPT / 演示视频  | ❌ 单独交   |
+
 
 ---
 
@@ -275,14 +294,17 @@ feat: CSRRM V1.1 — 预约/签到/暂离/管理端/UI原型对齐
 
 ## 你现在的进度（对照打勾）
 
-| 步骤 | 内容 | 你完成了吗 |
-|:---:|------|:---:|
-| 0 | 安装 Git，`git --version` 有输出 | ☐ |
-| 1 | GitHub 建好空仓库，复制 HTTPS URL | ☐ |
-| 2 | `mvnw test` + `build-frontend.ps1` 成功 | ☐ |
-| 3 | `git init` + `git branch -M main` | ☐ |
-| 4 | `git status` 里没有密码文件 | ☐ |
-| 5 | `git add` + `git commit` | ☐ |
-| 6 | `git remote` + `git push`（PAT 当密码） | ☐ |
-| 7 | GitHub 网页能看到完整目录 | ☐ |
-| 8 | 另目录 `git clone` 能跑 8080 | ☐ |
+
+| 步骤  | 内容                                    | 你完成了吗 |
+| --- | ------------------------------------- | ----- |
+| 0   | 安装 Git，`git --version` 有输出            | ☐     |
+| 1   | GitHub 建好空仓库，复制 HTTPS URL             | ☐     |
+| 2   | `mvnw test` + `build-frontend.ps1` 成功 | ☐     |
+| 3   | `git init` + `git branch -M main`     | ☐     |
+| 4   | `git status` 里没有密码文件                  | ☐     |
+| 5   | `git add` + `git commit`              | ☐     |
+| 6   | `git remote` + `git push`（PAT 当密码）    | ☐     |
+| 7   | GitHub 网页能看到完整目录                      | ☐     |
+| 8   | 另目录 `git clone` 能跑 8080               | ☐     |
+
+

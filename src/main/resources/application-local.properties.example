@@ -9,4 +9,9 @@ spring.datasource.password=在这里填写你的MySQL密码
 
 # 可选：JWT 与上传目录
 # app.jwt.secret=请使用至少32字符的随机字符串
-# app.upload.dir=uploads
+# 上传目录（建议使用绝对路径；默认项目根目录/uploads）
+# app.upload.dir=D:/SchoolWorkPlace/Database/CSRRMupdate/uploads
+
+# ---------- 多人共用库（可选）----------
+# 若全组共用远程 MySQL / 你担任「共用服务器」，请改用 application-shared.properties.example
+# 见 docs/01-使用指南/07-多人共用一套系统与数据库.md

@@ -187,6 +187,7 @@ cd D:\SchoolWorkPlace\Database\CSRRMupdate
 | 管理员   | admin        | admin123 |
 | 超级管理员 | superadmin   | super123 |
 
+> **登录不了？** 若提示「账号或密码错误」，多半是本地测试时改过密码。项目默认在**每次启动后端**时自动把上表演示账号密码恢复为表中值（`app.demo.sync-accounts-on-startup=true`）。请**重启** `spring-boot:run` 后再用 `123456` / `admin123` 登录。若仍失败，清空浏览器 Local Storage 中的 `token`、`role` 后重试。
 
 ---
 
@@ -261,3 +262,26 @@ cd CSRRMupdate 根目录
 ```
 
 **改 UI 时**：在「启动后端」之后增加 `frontend` → `npm run dev` → 访问 5173。
+
+---
+
+## 9. 全组共用一套库（服务器管理员）
+
+> 详细说明、排错、备份 → **[07-多人共用一套系统与数据库.md](07-多人共用一套系统与数据库.md)**
+
+```powershell
+cd D:\SchoolWorkPlace\Database\CSRRMupdate
+
+# MySQL（Docker）
+.\scripts\setup-shared-mysql-docker.ps1
+
+# 配置（首次）
+Copy-Item src\main\resources\application-shared.properties.example src\main\resources\application-shared.properties
+notepad src\main\resources\application-shared.properties
+
+# 防火墙（管理员 PowerShell）+ 启动
+.\scripts\open-firewall-shared.ps1
+.\scripts\start-shared-server.ps1
+```
+
+组员访问终端里显示的 `http://<服务器IP>:8080`，**不要**各自再跑 `spring-boot:run`。

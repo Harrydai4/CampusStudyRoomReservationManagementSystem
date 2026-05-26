@@ -36,7 +36,12 @@ if (-not (Test-Path $uploads)) {
 }
 
 Write-Host "`n=== 建议下一步 ===" -ForegroundColor Cyan
+Write-Host "【本机开发】"
 Write-Host "1. 确保 MySQL 8 已启动（或 docs\06-部署配置\docker-compose.yml）"
-Write-Host "2. 有密码时: `$env:DB_PASSWORD='你的密码'"
+Write-Host "2. 有密码时: Copy-Item application-local.properties.example → application-local.properties"
 Write-Host "3. .\mvnw.cmd spring-boot:run"
 Write-Host "4. 浏览器 http://localhost:8080"
+Write-Host ""
+Write-Host "【全组共用一套库】见 docs\01-使用指南\07-多人共用一套系统与数据库.md"
+Write-Host "  .\scripts\setup-shared-mysql-docker.ps1"
+Write-Host "  .\scripts\start-shared-server.ps1"

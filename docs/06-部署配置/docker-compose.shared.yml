@@ -1,0 +1,40 @@
+# 多人共用 MySQL（Docker，适合宿舍/实验室一台机器当「数据库服务器」）
+#
+# 用法（需 Docker Desktop）：
+#   cd docs/06-部署配置
+#   docker compose -f docker-compose.shared.yml up -d
+#
+# 默认：
+#   主机端口 3306 → MySQL
+#   root 密码：csrrm_root_123
+#   共用账号：study / csrrm_shared_123
+#   数据库：study_room_reservation
+#
+# 组员在 application-shared.properties 中配置：
+#   spring.datasource.url=jdbc:mysql://<本机局域网IP>:3306/study_room_reservation?...
+#   spring.datasource.username=study
+#   spring.datasource.password=csrrm_shared_123
+#
+# 安全：仅在内网演示使用；勿将 3306 暴露到公网。
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: csrrm-shared-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: csrrm_root_123
+      MYSQL_DATABASE: study_room_reservation
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - csrrm_shared_mysql_data:/var/lib/mysql
+      - ./init-shared-mysql.sql:/docker-entrypoint-initdb.d/01-init-shared.sql:ro
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --default-authentication-plugin=mysql_native_password
+
+volumes:
+  csrrm_shared_mysql_data:

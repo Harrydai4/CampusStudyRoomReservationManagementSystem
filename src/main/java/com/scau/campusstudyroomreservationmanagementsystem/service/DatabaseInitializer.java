@@ -1,5 +1,6 @@
 package com.scau.campusstudyroomreservationmanagementsystem.service;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -17,6 +18,10 @@ public class DatabaseInitializer implements CommandLineRunner {
     /** 缓存数据库类型，避免重复打开连接导致连接池耗尽。 */
     private Boolean h2Database;
 
+    /** 每次启动将演示账号密码恢复为文档默认值，避免测试改密后无法登录。生产环境可设为 false。 */
+    @Value("${app.demo.sync-accounts-on-startup:true}")
+    private boolean syncAccountsOnStartup;
+
     public DatabaseInitializer(JdbcTemplate jdbc, PasswordEncoder passwordEncoder) {
         this.jdbc = jdbc;
         this.passwordEncoder = passwordEncoder;
@@ -25,7 +30,11 @@ public class DatabaseInitializer implements CommandLineRunner {
     @Override
     public void run(String... args) {
         createTables();
+        migrateReservationSlotSchema();
         seedData();
+        if (syncAccountsOnStartup) {
+            syncDemoAccounts();
+        }
     }
 
     private void createTables() {
@@ -155,7 +164,7 @@ public class DatabaseInitializer implements CommandLineRunner {
                   slot_start datetime not null,
                   slot_end datetime not null,
                   status varchar(20) not null,
-                  unique key uk_seat_slot(seat_id,slot_start,status),
+                  unique key uk_seat_slot(seat_id,slot_start),
                   index idx_slot_reservation(reservation_id)
                 ) charset=utf8mb4
                 """,
@@ -291,6 +300,28 @@ public class DatabaseInitializer implements CommandLineRunner {
         createViews();
     }
 
+    /**
+     * 旧版 uk_seat_slot(seat_id,slot_start,status) 在签退改 RELEASED 时会与历史 RELEASED 冲突。
+     * 迁移：清理非 ACTIVE 时间片，并将唯一索引改为 (seat_id, slot_start)。
+     */
+    private void migrateReservationSlotSchema() {
+        if (isH2Database()) {
+            return;
+        }
+        try {
+            jdbc.update("delete from reservation_slot where status <> 'ACTIVE'");
+        } catch (Exception ignored) {
+        }
+        try {
+            jdbc.execute("alter table reservation_slot drop index uk_seat_slot");
+        } catch (Exception ignored) {
+        }
+        try {
+            jdbc.execute("alter table reservation_slot add unique key uk_seat_slot(seat_id, slot_start)");
+        } catch (Exception ignored) {
+        }
+    }
+
     /** H2 测试库不支持 charset=utf8mb4，需剥离该子句。 */
     private String adaptDdl(String sql) {
         if (!isH2Database()) {
@@ -345,6 +376,51 @@ public class DatabaseInitializer implements CommandLineRunner {
                 group by sr.id, sr.name, sr.seat_count
                 """);
         }
+    }
+
+    /**
+     * 将内置演示账号恢复为文档约定密码与可登录状态（不删除业务数据）。
+     * 学号 202301010101/102 → 123456；admin → admin123；superadmin → super123。
+     */
+    private void syncDemoAccounts() {
+        LocalDateTime now = LocalDateTime.now();
+        String studentPassword = passwordEncoder.encode("123456");
+        String adminPassword = passwordEncoder.encode("admin123");
+        String superPassword = passwordEncoder.encode("super123");
+
+        for (String studentNo : List.of("202301010101", "202301010102")) {
+            jdbc.update("""
+                    update user_account set password_hash=?, status='NORMAL', updated_at=?
+                    where username=? and role='STUDENT'
+                    """, studentPassword, now, studentNo);
+            jdbc.update("""
+                    update student_profile set audit_status='APPROVED', updated_at=?
+                    where student_no=?
+                    """, now, studentNo);
+        }
+        jdbc.update("""
+                update user_account set password_hash=?, status='PENDING', updated_at=?
+                where username='202301010199' and role='STUDENT'
+                """, studentPassword, now);
+
+        Long demoStudentId = jdbc.queryForObject(
+                "select id from user_account where username='202301010101' and role='STUDENT'", Long.class);
+        if (demoStudentId != null) {
+            jdbc.update("update student_profile set credit_score=280, updated_at=? where user_id=?", now, demoStudentId);
+            jdbc.update("""
+                    update blacklist_record set status='RELEASED', released_at=?
+                    where user_id=? and status='ACTIVE'
+                    """, now, demoStudentId);
+        }
+
+        jdbc.update("""
+                update admin_account set password_hash=?, status='NORMAL', updated_at=?
+                where account='admin'
+                """, adminPassword, now);
+        jdbc.update("""
+                update admin_account set password_hash=?, status='NORMAL', updated_at=?
+                where account='superadmin'
+                """, superPassword, now);
     }
 
     private void seedData() {

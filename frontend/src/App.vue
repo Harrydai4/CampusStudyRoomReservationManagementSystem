@@ -166,14 +166,14 @@
           <div class="card check-actions" v-if="activeReservation">
             <template v-if="activeReservation.status === 'PENDING'">
               <div class="check-actions-state">
-                <button type="button" class="round-action primary-round" @click="loadQr">
+                <button type="button" class="round-action primary-round" :disabled="!canOpenCheckinQr" @click="loadQr">
                   <span>📱</span><strong>出示二维码签到</strong>
                 </button>
                 <button type="button" class="round-action warning-round" @click="openFeedbackModal">
                   <span>💬</span><strong>问题反馈</strong>
                 </button>
               </div>
-              <div class="check-hint">请在预约开始前后 15 分钟内完成签到。</div>
+              <div class="check-hint">{{ checkinWindowHint }}</div>
             </template>
             <template v-else-if="activeReservation.status === 'USING'">
               <div class="check-actions-state">
@@ -222,7 +222,7 @@
           <div class="profile-group-title">账号与安全</div>
           <div class="profile-menu">
             <button type="button" class="profile-item" @click="openProfileInfo"><span>📝</span><span>个人信息</span><span class="arrow">›</span></button>
-            <button type="button" class="profile-item" @click="notify('修改密码功能待接入')"><span>🔐</span><span>修改密码</span><span class="arrow">›</span></button>
+            <button type="button" class="profile-item" @click="openChangePassword"><span>🔐</span><span>修改密码</span><span class="arrow">›</span></button>
             <button type="button" class="profile-item" @click="studentPage = 'settings'"><span>⚙️</span><span>设置</span><span class="arrow">›</span></button>
             <button type="button" class="profile-item" @click="aboutOpen = true"><span>ℹ️</span><span>关于系统</span><span class="arrow">›</span></button>
             <button type="button" class="profile-item" @click="openFeedbackModal"><span>💬</span><span>问题反馈</span><span class="arrow">›</span></button>
@@ -309,7 +309,7 @@
         <template v-if="studentPage === 'settings'">
           <div class="profile-group-title">账号与安全</div>
           <div class="profile-menu">
-            <button type="button" class="profile-item" @click="notify('修改密码功能待接入')"><span>🔐</span><span>修改密码</span><span class="arrow">›</span></button>
+            <button type="button" class="profile-item" @click="openChangePassword"><span>🔐</span><span>修改密码</span><span class="arrow">›</span></button>
             <button type="button" class="profile-item"><span>📱</span><span>手机绑定</span><span class="muted">{{ me.phone || '未绑定' }}</span><span class="arrow">›</span></button>
             <button type="button" class="profile-item"><span>✉️</span><span>邮箱绑定</span><span class="muted">{{ me.email || '未绑定' }}</span><span class="arrow">›</span></button>
           </div>
@@ -364,17 +364,20 @@
               <div ref="adminChart" class="chart"></div>
             </div>
             <h3 class="section-title">实时预约</h3>
-            <DataTable :rows="dashboard.liveReservations || []" :columns="['studentNo','studentName','roomName','seatNo','reserveDate','status']" />
+            <DataTable :rows="decoratedLiveReservations" :columns="['studentNo','studentName','roomName','seatNo','reserveDate','status']" />
           </template>
 
           <template v-if="adminPage === 'users'">
             <el-input v-model="userKeyword" placeholder="搜索学号或姓名" @input="loadUsers" />
-            <DataTable :rows="pagedUsers" :columns="['student_no','name','college','credit_score','audit_status','accountStatus']">
+            <div class="filter-row user-audit-filters">
+              <button v-for="f in userAuditFilters" :key="f.key" type="button" :class="{ active: userAuditFilter === f.key }" @click="userAuditFilter = f.key; loadUsers()">{{ f.label }}</button>
+            </div>
+            <DataTable :rows="pagedUsers" :columns="['student_no','name','college','credit_score','auditLabel','statusLabel']" empty-text="暂无用户数据">
               <template #actions="{ row }">
-                <el-button size="small" @click="approve(row.userId)">通过</el-button>
-                <el-button size="small" @click="reject(row.userId)">拒绝</el-button>
-                <el-button size="small" @click="disable(row.userId)">禁用</el-button>
-                <el-button size="small" @click="enable(row.userId)">启用</el-button>
+                <el-button v-if="row.audit_status === 'PENDING'" size="small" type="success" @click="approve(row)">通过</el-button>
+                <el-button v-if="row.audit_status === 'PENDING'" size="small" type="warning" @click="reject(row)">拒绝</el-button>
+                <el-button v-if="row.accountStatus !== 'DISABLED' && row.audit_status === 'APPROVED'" size="small" @click="disable(row)">禁用</el-button>
+                <el-button v-if="row.accountStatus === 'DISABLED'" size="small" @click="enable(row)">启用</el-button>
               </template>
             </DataTable>
             <div class="admin-pager">
@@ -405,7 +408,7 @@
               <div class="field"><label>分布图地址</label><input v-model="roomForm.layoutImageUrl" class="input" placeholder="上传后自动填入" /></div>
               <div class="upload-row">
                 <input type="file" accept="image/*" @change="uploadLayoutImage" />
-                <img v-if="roomForm.layoutImageUrl" class="layout-preview" :src="roomForm.layoutImageUrl" alt="预览" />
+                <img v-if="roomForm.layoutImageUrl" class="layout-preview" :src="assetUrl(roomForm.layoutImageUrl)" alt="预览" />
               </div>
               <div class="room-row">
                 <div class="field"><label>行数</label><input v-model.number="roomForm.rowCount" class="input" type="number" min="1" max="20" /></div>
@@ -416,7 +419,7 @@
             <article class="room-item" v-for="r in rooms" :key="r.id">
               <div>
                 <div class="room-item-head"><strong>{{ r.name }}</strong><span class="mini-badge active">余 {{ r.availableSeats ?? r.available_seats ?? 0 }}</span></div>
-                <p class="muted">{{ r.location }} · {{ r.floor || '未设置' }} · {{ r.status }}</p>
+                <p class="muted">{{ r.location }} · {{ r.floor || '未设置' }} · {{ roomStatusText(r.status) }}</p>
                 <div class="room-tags">
                   <span v-for="tag in parseRoomFacilities(r)" :key="tag" class="room-tag">{{ tag }}</span>
                 </div>
@@ -429,9 +432,13 @@
           </template>
 
           <template v-if="adminPage === 'seats'">
-            <el-select v-model="adminSeatRoomId" @change="loadAdminSeats">
-              <el-option v-for="r in rooms" :key="r.id" :label="r.name" :value="r.id" />
-            </el-select>
+            <div class="admin-head-actions">
+              <el-select v-model="adminSeatRoomId" placeholder="选择自习室" @change="loadAdminSeats" style="min-width:220px">
+                <el-option v-for="r in rooms" :key="r.id" :label="r.name" :value="r.id" />
+              </el-select>
+              <button type="button" class="btn btn-primary" :disabled="!adminSeatRoomId" @click="addAdminSeat">新增座位</button>
+            </div>
+            <p class="scanner-hint">点击格子可编辑属性；删除前请确认无进行中预约。</p>
             <div class="seat-map-grid" :style="{ gridTemplateColumns: `repeat(${adminRoom?.col_count || 6}, minmax(0, 1fr))` }">
               <button
                 v-for="(s, idx) in adminSeats"
@@ -450,25 +457,28 @@
           </template>
 
           <template v-if="adminPage === 'reservations'">
-            <DataTable :rows="adminReservations" :columns="['reservation_no','studentName','roomName','seatNo','reserve_date','status']" />
+            <DataTable :rows="decoratedAdminReservations" :columns="['reservation_no','studentName','roomName','seatNo','reserve_date','status']" empty-text="暂无预约记录" />
           </template>
 
           <template v-if="adminPage === 'checkins'">
             <div class="card scan-box">
               <div class="scanner-toolbar">
-                <el-button type="primary" @click="isScanning ? stopCameraScan() : startCameraScan()">
-                  {{ isScanning ? '停止扫码' : '扫码签到' }}
-                </el-button>
-                <el-button :disabled="!scanToken.trim()" @click="scanCheckin">手动确认</el-button>
+                <button v-if="canUseLiveCamera" type="button" class="btn btn-primary" @click="toggleCameraScan">
+                  {{ isScanning ? '停止扫码' : '实时扫码' }}
+                </button>
+                <button type="button" class="btn btn-primary" @click="triggerPhotoScan">拍照扫码</button>
+                <button type="button" class="btn btn-outline" :disabled="!scanToken.trim()" @click="scanCheckin">手动确认</button>
+                <input ref="scanPhotoInput" type="file" accept="image/*" capture="environment" class="scan-photo-input" @change="onScanPhotoSelected" />
               </div>
-              <div class="scanner-view" v-if="isScanning">
-                <video ref="scanVideo" autoplay muted playsinline></video>
+              <div class="scanner-view" v-show="isScanning">
+                <video ref="scanVideo" autoplay muted playsinline playsInline webkit-playsinline></video>
                 <div class="scanner-frame"></div>
               </div>
-              <p class="scanner-hint">{{ scanHint }}</p>
-              <el-input v-model="scanToken" placeholder="摄像头无法自动识别时，可粘贴学生二维码 token" />
+              <p class="scanner-hint">{{ scanHint || defaultScanHint }}</p>
+              <p v-if="cameraPermissionHint" class="scanner-permission-hint">{{ cameraPermissionHint }}</p>
+              <input v-model="scanToken" class="input" placeholder="摄像头无法使用时，可粘贴学生签到二维码 token" />
             </div>
-            <DataTable :rows="checkins" :columns="['studentName','roomName','seatNo','checkin_time','checkout_time','result']" />
+            <DataTable :rows="decoratedCheckins" :columns="['studentName','roomName','seatNo','checkin_time','checkout_time','result']" empty-text="暂无签到记录" />
           </template>
 
           <template v-if="adminPage === 'announcements'">
@@ -494,6 +504,7 @@
               <button type="button" :class="{ active: statAdminView === 'peak' }" @click="switchStatAdminView('peak')">高峰分析</button>
               <button type="button" :class="{ active: statAdminView === 'share' }" @click="switchStatAdminView('share')">自习室占比</button>
             </div>
+            <p class="scanner-hint">当前统计周期：{{ adminStatsReport.summary?.periodLabel || '今日' }}</p>
             <div class="admin-dashboard-grid">
               <div class="stat-card"><div class="lbl">总预约</div><div class="num">{{ adminStatSummary.totalReserve }}</div></div>
               <div class="stat-card"><div class="lbl">使用中</div><div class="num">{{ adminStatSummary.usingCount }}</div></div>
@@ -504,9 +515,10 @@
           </template>
 
           <template v-if="adminPage === 'feedback'">
-            <DataTable :rows="adminFeedback" :columns="['studentName','roomName','seatNo','type','severity','content','status']">
+            <DataTable :rows="decoratedAdminFeedback" :columns="['studentName','roomName','seatNo','type','severity','content','status']" empty-text="暂无反馈">
               <template #actions="{ row }">
-                <el-button size="small" @click="handleFeedback(row.id)">标记处理</el-button>
+                <el-button v-if="row._rawStatus === 'PENDING' || row._rawStatus === 'PROCESSING'" size="small" type="primary" @click="openFeedbackHandle(row)">标记处理</el-button>
+                <span v-else class="muted">已处理</span>
               </template>
             </DataTable>
           </template>
@@ -514,7 +526,7 @@
           <template v-if="adminPage === 'settings'">
             <div class="card">当前管理员：{{ me.name }} · {{ me.role }}</div>
             <h3>最近操作日志</h3>
-            <DataTable :rows="operationLogs" :columns="['module','action','target_type','detail','created_at']" />
+            <DataTable :rows="operationLogs" :columns="['module','action','target_type','detail','created_at']" empty-text="暂无操作日志" />
           </template>
         </main>
       </div>
@@ -540,19 +552,31 @@
       </div>
     </div>
 
-    <div v-if="qrModalOpen" class="modal-mask" @click.self="qrModalOpen = false">
+    <div v-if="qrModalOpen" class="modal-mask" @click.self="closeQrModal">
       <div class="modal-card" style="max-width:320px">
         <div class="modal-head">
-          <div class="modal-title">请向管理员出示二维码</div>
-          <button type="button" class="modal-close" @click="qrModalOpen = false">✕</button>
+          <div class="modal-title">{{ qrCheckinSuccess ? '签到成功' : '请向管理员出示二维码' }}</div>
+          <button type="button" class="modal-close" @click="closeQrModal">✕</button>
         </div>
         <div class="qr-box" style="text-align:center">
-          <div class="qr-image" v-html="qrSvg"></div>
-          <div class="qr-meta">
-            <strong>{{ qrInfo.name }} · {{ qrInfo.studentNo }}</strong>
-            <span>{{ qrInfo.roomName }} · {{ qrInfo.seatNo }}</span>
-            <small>二维码 {{ qrInfo.expireSeconds || 60 }} 秒内有效</small>
+          <div v-if="qrCheckinSuccess" class="qr-success-state">
+            <div class="qr-success-icon">✓</div>
+            <p class="qr-success-text">签到成功</p>
+            <small class="muted">5 秒后自动关闭</small>
           </div>
+          <template v-else>
+            <div class="qr-image" v-html="qrSvg"></div>
+            <div class="qr-meta">
+              <strong>{{ qrInfo.name }} · {{ qrInfo.studentNo }}</strong>
+              <span>{{ qrInfo.roomName }} · {{ qrInfo.seatNo }}</span>
+              <small>{{ qrCountdown > 0 ? `${qrCountdown} 秒后过期` : '正在刷新…' }}</small>
+            </div>
+          </template>
+        </div>
+        <div v-if="!qrCheckinSuccess" class="modal-actions">
+          <button type="button" class="btn btn-outline" @click="loadQr">刷新二维码</button>
+          <button type="button" class="btn btn-outline" @click="copyQrToken">复制 token</button>
+          <button type="button" class="btn btn-primary" @click="closeQrModal">关闭</button>
         </div>
       </div>
     </div>
@@ -631,6 +655,24 @@
       </div>
     </div>
 
+    <div v-if="changePasswordOpen" class="modal-mask" @click.self="changePasswordOpen = false">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div class="modal-title">🔐 修改密码</div>
+          <button type="button" class="modal-close" @click="changePasswordOpen = false">✕</button>
+        </div>
+        <div class="dialog-form">
+          <div class="field"><label>原密码</label><input v-model="changePasswordForm.oldPassword" type="password" class="input" placeholder="请输入原密码" /></div>
+          <div class="field"><label>新密码</label><input v-model="changePasswordForm.newPassword" type="password" class="input" placeholder="6-20位，含字母和数字" /></div>
+          <div class="field"><label>确认新密码</label><input v-model="changePasswordForm.confirmPassword" type="password" class="input" placeholder="请再次输入新密码" /></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" @click="changePasswordOpen = false">取消</button>
+          <button type="button" class="btn btn-primary" @click="submitChangePassword">保存</button>
+        </div>
+      </div>
+    </div>
+
     <div v-if="rejectOpen" class="modal-mask" @click.self="rejectOpen = false">
       <div class="modal-card">
         <div class="modal-head">
@@ -663,8 +705,27 @@
           <label><input type="checkbox" v-model="seatEditEnabled" /> 可预约（启用）</label>
         </div>
         <div class="modal-actions">
+          <button type="button" class="btn btn-danger" @click="deleteSeatEdit">删除座位</button>
           <button type="button" class="btn btn-outline" @click="seatEditOpen = false">取消</button>
           <button type="button" class="btn btn-primary" @click="saveSeatEdit">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="feedbackHandleOpen" class="modal-mask" @click.self="feedbackHandleOpen = false">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div class="modal-title">处理学生反馈</div>
+          <button type="button" class="modal-close" @click="feedbackHandleOpen = false">✕</button>
+        </div>
+        <div class="dialog-form">
+          <p class="muted">学生：{{ feedbackHandleForm.studentName }} · {{ feedbackHandleForm.type }}</p>
+          <p>{{ feedbackHandleForm.content }}</p>
+          <div class="field"><label>处理说明</label><textarea v-model="feedbackHandleForm.handleResult" class="input" rows="4" placeholder="请填写处理结果，将通知学生"></textarea></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" @click="feedbackHandleOpen = false">取消</button>
+          <button type="button" class="btn btn-primary" @click="submitFeedbackHandle">确认处理</button>
         </div>
       </div>
     </div>
@@ -754,8 +815,17 @@
 <script setup>
 import axios from 'axios'
 import * as echarts from 'echarts'
-import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import jsQR from 'jsqr'
+import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { createQrSvg } from './qr'
+import {
+  ADMIN_COLUMN_LABELS,
+  formatAdminCell,
+  decorateReservationRow,
+  decorateFeedbackRow,
+  decorateCheckinRow,
+  reservationStatusText
+} from './admin-i18n'
 
 const api = axios.create({ baseURL: '/api' })
 const token = ref(localStorage.getItem('token') || '')
@@ -801,6 +871,11 @@ const announcements = ref([])
 const notifications = ref([])
 const qrToken = ref('')
 const qrSvg = ref('')
+const qrCountdown = ref(0)
+const qrCheckinSuccess = ref(false)
+let qrCountdownTimer = null
+let qrSuccessCloseTimer = null
+let checkinPollTimer = null
 const qrInfo = ref({})
 const credit = ref({ score: 0, logs: [] })
 const studyStats = ref({})
@@ -845,6 +920,15 @@ const adminAccounts = ref([])
 const rejectRemark = ref('')
 const rejectUserId = ref(null)
 const rejectOpen = ref(false)
+const changePasswordOpen = ref(false)
+const changePasswordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
+const userAuditFilter = ref('')
+const userAuditFilters = [
+  { key: '', label: '全部' },
+  { key: 'PENDING', label: '待审核' },
+  { key: 'APPROVED', label: '已通过' },
+  { key: 'REJECTED', label: '已拒绝' }
+]
 const genericModal = reactive({ open: false, title: '', message: '', onConfirm: null })
 const studySeconds = ref(0)
 const statAdminView = ref('usage')
@@ -860,12 +944,17 @@ const userKeyword = ref('')
 const adminReservations = ref([])
 const checkins = ref([])
 const adminFeedback = ref([])
+const adminStatsReport = ref({ summary: {}, usage: [], peak: [], trend: [], credit: [] })
+const feedbackHandleOpen = ref(false)
+const feedbackHandleForm = reactive({ id: null, studentName: '', type: '', content: '', handleResult: '' })
 const adminSeatRoomId = ref(null)
 const adminSeats = ref([])
 const scanToken = ref('')
 const scanVideo = ref(null)
+const scanPhotoInput = ref(null)
 const isScanning = ref(false)
-const scanHint = ref('手机端可打开摄像头扫描学生二维码，也可手动粘贴 token。')
+const scanHint = ref('')
+const cameraPermissionHint = ref('')
 let scanStream = null
 let scanFrame = 0
 let barcodeDetector = null
@@ -879,12 +968,68 @@ const operationLogs = ref([])
 const tempLeaveHint = ref('暂离中，请在 30 分钟内返回座位')
 
 const todayText = computed(() => new Date().toLocaleDateString('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' }))
+/** 实时摄像头仅 HTTPS 或 localhost 可用；局域网 IP + HTTP 需用「拍照扫码」 */
+const canUseLiveCamera = computed(() => {
+  if (typeof window === 'undefined') return true
+  return window.isSecureContext || location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+})
+const defaultScanHint = computed(() => canUseLiveCamera.value
+  ? '电脑端可点「实时扫码」打开摄像头；手机局域网访问请用「拍照扫码」。'
+  : '当前为局域网 HTTP，请点「拍照扫码」对准学生二维码拍照，系统会自动识别并完成签到。')
 const homeDateText = computed(() => `${new Date().getMonth() + 1}月${new Date().getDate()}日`)
 const unreadCount = computed(() => notifications.value.filter(n => !n.read_flag).length)
 const currentRoom = computed(() => rooms.value.find(r => r.id === reservationForm.roomId))
 const adminRoom = computed(() => rooms.value.find(r => r.id === adminSeatRoomId.value))
 const todayReservation = computed(() => reservations.value.find(r => String(r.reserve_date).startsWith(reservationForm.date) && ['PENDING', 'USING'].includes(r.status)))
 const activeReservation = computed(() => reservations.value.find(r => ['PENDING', 'USING', 'TEMP_LEAVE'].includes(r.status)))
+function parseReservationDateTime(r, timeField = 'start_time') {
+  if (!r) return null
+  const rawDate = r.reserve_date ?? r.reserveDate
+  let datePart = ''
+  if (rawDate instanceof Date) {
+    datePart = rawDate.toISOString().slice(0, 10)
+  } else {
+    datePart = String(rawDate || '').replace(' ', 'T').slice(0, 10)
+  }
+  const altTime = timeField === 'start_time' ? 'startTime' : 'endTime'
+  const rawTime = r[timeField] ?? r[altTime] ?? '00:00:00'
+  const timePart = String(rawTime).slice(0, 8)
+  const [y, mo, d] = datePart.split('-').map(n => Number(n))
+  const [hh, mm, ss = 0] = timePart.split(':').map(n => Number(n))
+  if (!y || !mo || !d) return null
+  return new Date(y, mo - 1, d, hh || 0, mm || 0, ss || 0)
+}
+function reservationStartDate(r) {
+  return parseReservationDateTime(r, 'start_time')
+}
+function isWithinCheckinWindow(r) {
+  const start = reservationStartDate(r)
+  if (!start || Number.isNaN(start.getTime())) return false
+  const windowStart = start.getTime() - 15 * 60 * 1000
+  const windowEnd = start.getTime() + 15 * 60 * 1000
+  const now = Date.now()
+  return now >= windowStart && now <= windowEnd
+}
+const canOpenCheckinQr = computed(() => {
+  const r = activeReservation.value
+  return !!r && r.status === 'PENDING' && isWithinCheckinWindow(r)
+})
+const checkinWindowHint = computed(() => {
+  const r = activeReservation.value
+  if (!r || r.status !== 'PENDING') return ''
+  const start = reservationStartDate(r)
+  if (!start) return '请在预约开始前后 15 分钟内完成签到。'
+  const windowStart = new Date(start.getTime() - 15 * 60 * 1000)
+  const windowEnd = new Date(start.getTime() + 15 * 60 * 1000)
+  const fmt = (dt) => dt.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+  if (Date.now() < windowStart.getTime()) {
+    return `签到尚未开始，开放时间：${fmt(windowStart)} 至 ${fmt(windowEnd)}`
+  }
+  if (Date.now() > windowEnd.getTime()) {
+    return '签到时间已过，请等待系统处理或联系管理员。'
+  }
+  return '请在预约开始前后 15 分钟内完成签到。'
+})
 const timerText = computed(() => {
   if (!activeReservation.value) return '00:00:00'
   if (activeReservation.value.status === 'TEMP_LEAVE') {
@@ -996,25 +1141,34 @@ const pagedUsers = computed(() => {
   return users.value.slice(start, start + userPageSize)
 })
 const userTotalPages = computed(() => Math.max(1, Math.ceil(users.value.length / userPageSize)))
+const decoratedLiveReservations = computed(() =>
+  (dashboard.value.liveReservations || []).map(r => ({
+    ...r,
+    reserveDate: formatDate(r.reserveDate || r.reserve_date),
+    status: reservationStatusText(r.status)
+  }))
+)
+const decoratedAdminReservations = computed(() => adminReservations.value.map(decorateReservationRow))
+const decoratedCheckins = computed(() => checkins.value.map(decorateCheckinRow))
+const decoratedAdminFeedback = computed(() => adminFeedback.value.map(row => {
+  const d = decorateFeedbackRow(row)
+  return { ...d, _rawStatus: row.status }
+}))
 const adminStatSummary = computed(() => {
+  const s = adminStatsReport.value.summary || {}
+  if (s.totalReserve != null) {
+    return {
+      totalReserve: s.totalReserve || 0,
+      usingCount: s.usingCount || 0,
+      checkinRate: s.checkinRate || 0,
+      avgCredit: s.avgCredit || 0
+    }
+  }
   const usage = dashboard.value.usage || []
   const totalReserve = usage.reduce((acc, row) => acc + Number(row.reservationCount || 0), 0)
   const usedCount = usage.reduce((acc, row) => acc + Number(row.usedCount || 0), 0)
   const checkinRate = totalReserve ? Math.round((usedCount / totalReserve) * 100) : 0
-  const creditRows = dashboard.value.creditStats || []
-  const creditTotal = creditRows.reduce((acc, row) => acc + Number(row.value || 0), 0)
-  const creditWeight = creditRows.reduce((acc, row) => {
-    const label = String(row.label || '')
-    const weight = label.includes('优秀') ? 400 : label.includes('良好') ? 300 : label.includes('一般') ? 200 : 100
-    return acc + Number(row.value || 0) * weight
-  }, 0)
-  const avgCredit = creditTotal ? Math.round(creditWeight / creditTotal) : (dashboard.value.avgCredit || 0)
-  return {
-    totalReserve,
-    usingCount: dashboard.value.usingCount || 0,
-    checkinRate,
-    avgCredit
-  }
+  return { totalReserve, usingCount: dashboard.value.usingCount || 0, checkinRate, avgCredit: 0 }
 })
 const reservationDurationText = computed(() => {
   if (!reservationForm.startTime || !reservationForm.endTime) return ''
@@ -1027,6 +1181,80 @@ const reservationDurationText = computed(() => {
 function notify(message) {
   toast.value = message
   setTimeout(() => { toast.value = '' }, 2200)
+}
+function assetUrl(path) {
+  if (!path) return ''
+  if (String(path).startsWith('http')) return path
+  return String(path).startsWith('/') ? path : `/${path}`
+}
+function roomStatusText(status) {
+  return { OPEN: '开放', CLOSED: '关闭', MAINTENANCE: '维护中' }[status] || status || '-'
+}
+function clearQrCountdown() {
+  if (qrCountdownTimer) {
+    clearInterval(qrCountdownTimer)
+    qrCountdownTimer = null
+  }
+}
+function clearQrSuccessCloseTimer() {
+  if (qrSuccessCloseTimer) {
+    clearTimeout(qrSuccessCloseTimer)
+    qrSuccessCloseTimer = null
+  }
+}
+function stopCheckinPagePoll() {
+  if (checkinPollTimer) {
+    clearInterval(checkinPollTimer)
+    checkinPollTimer = null
+  }
+}
+function closeQrModal() {
+  qrModalOpen.value = false
+  qrCheckinSuccess.value = false
+  clearQrCountdown()
+  clearQrSuccessCloseTimer()
+}
+async function showQrCheckinSuccess() {
+  if (qrCheckinSuccess.value) return
+  qrCheckinSuccess.value = true
+  clearQrCountdown()
+  try { await loadReservations() } catch { /* ignore */ }
+  notify('签到成功')
+  updateStudyTimer()
+  clearQrSuccessCloseTimer()
+  qrSuccessCloseTimer = setTimeout(() => closeQrModal(), 5000)
+}
+/** 签到页统一轮询：二维码成功反馈、自动切到学习中、无效签到被撤销后回退 */
+async function syncCheckinStateFromServer() {
+  if (studentPage.value !== 'checkin') return
+  const prev = activeReservation.value
+  const prevStatus = prev?.status
+  const prevId = prev?.id
+  try {
+    await loadReservations()
+    const cur = activeReservation.value
+    if (!cur) return
+    if (qrModalOpen.value && !qrCheckinSuccess.value) {
+      const targetId = qrInfo.value?.reservationId
+      if (Number(cur.id) === Number(targetId) && ['USING', 'TEMP_LEAVE'].includes(cur.status)) {
+        await showQrCheckinSuccess()
+        return
+      }
+    }
+    if (prevStatus === 'PENDING' && cur.status === 'USING' && Number(prevId) === Number(cur.id)) {
+      updateStudyTimer()
+      if (!qrModalOpen.value) notify('签到成功，已进入学习状态')
+    }
+    if (prevStatus === 'USING' && cur.status === 'PENDING' && Number(prevId) === Number(cur.id)) {
+      notify('签到无效，已恢复为待签到')
+      closeQrModal()
+    }
+  } catch { /* 轮询失败忽略 */ }
+}
+function startCheckinPagePoll() {
+  stopCheckinPagePoll()
+  syncCheckinStateFromServer()
+  checkinPollTimer = setInterval(syncCheckinStateFromServer, 2000)
 }
 function forgetPassword() {
   notify('请联系管理员重置密码，或通过注册邮箱找回')
@@ -1119,8 +1347,7 @@ function runGenericConfirm() {
 }
 async function changeAdminStatsPeriod(period) {
   adminStatsPeriod.value = period
-  await nextTick()
-  drawUsageChart()
+  await loadAdminStatistics()
 }
 function toDateValue(date) {
   const y = date.getFullYear()
@@ -1264,6 +1491,7 @@ function openModalConfirm(title, message, onOk) {
 }
 function clearSession(message) {
   stopCameraScan()
+  clearQrCountdown()
   token.value = ''
   role.value = ''
   me.value = {}
@@ -1330,14 +1558,14 @@ async function loginAdmin() {
     authLoading.value = false
   }
 }
-function afterLogin(t, r, info) {
+async function afterLogin(t, r, info) {
   token.value = t
   role.value = r
   me.value = info || {}
   localStorage.setItem('token', t)
   localStorage.setItem('role', r)
   notify('登录成功')
-  bootstrap()
+  await bootstrap(false)
 }
 async function register() {
   if (authLoading.value) return
@@ -1388,7 +1616,8 @@ async function register() {
 function logout() {
   clearSession('已退出登录')
 }
-async function bootstrap() {
+/** @param silent 页面刷新时用旧 token 恢复会话：失败则静默清 token，避免登录页弹 SQL 报错 */
+async function bootstrap(silent = true) {
   if (!token.value) return
   try {
     me.value = await call('get', '/auth/me')
@@ -1400,7 +1629,10 @@ async function bootstrap() {
       await openAdmin('dashboard')
     }
   } catch (e) {
-    clearSession(e.message || '会话失效，请重新登录')
+    clearSession('')
+    if (!silent) {
+      notify(e.message || '登录后加载失败，请重试')
+    }
   }
 }
 async function loadRooms() {
@@ -1467,13 +1699,43 @@ async function cancelReservation(r) {
   await loadReservations()
 }
 async function loadQr() {
+  if (!canOpenCheckinQr.value) {
+    notify(checkinWindowHint.value || '当前不在签到时间内')
+    return
+  }
   try {
     const data = await call('get', '/checkin/qrcode')
     qrToken.value = data.qrToken
     qrInfo.value = data
-    qrSvg.value = createQrSvg(data.qrToken)
+    qrCheckinSuccess.value = false
+    qrSvg.value = await createQrSvg(data.qrToken)
     qrModalOpen.value = true
+    clearQrCountdown()
+    qrCountdown.value = data.expireSeconds || 60
+    qrCountdownTimer = setInterval(() => {
+      qrCountdown.value -= 1
+      if (qrCountdown.value <= 0) {
+        if (!canOpenCheckinQr.value) {
+          notify('签到时间已结束，请关闭后重新预约')
+          closeQrModal()
+          return
+        }
+        loadQr().catch((e) => {
+          notify(e.message || '二维码已过期，请重新生成')
+          closeQrModal()
+        })
+      }
+    }, 1000)
   } catch (e) { notify(e.message) }
+}
+async function copyQrToken() {
+  if (!qrToken.value) return notify('请先生成二维码')
+  try {
+    await navigator.clipboard.writeText(qrToken.value)
+    notify('token 已复制，可粘贴到管理端「手动确认」')
+  } catch {
+    notify('复制失败，请长按选中 token 手动复制')
+  }
 }
 async function checkout() {
   confirmCheckout()
@@ -1501,6 +1763,10 @@ async function saveProfile() {
 async function uploadLayoutImage(e) {
   const file = e.target.files?.[0]
   if (!file) return
+  if (!token.value) {
+    notify('请先登录管理端后再上传图片')
+    return
+  }
   try {
     const form = new FormData()
     form.append('file', file)
@@ -1575,34 +1841,88 @@ async function openAdmin(page) {
   if (page === 'rooms') await loadRooms()
   if (page === 'seats') await loadAdminSeats()
   if (page === 'reservations') adminReservations.value = await call('get', '/admin/reservations')
-  if (page === 'checkins') checkins.value = await call('get', '/admin/checkins')
-  if (page === 'announcements') await loadAnnouncements()
-  if (page === 'statistics') {
-    const [usage, peak, creditStats] = await Promise.all([
-      call('get', '/admin/statistics/usage'),
-      call('get', '/admin/statistics/peak'),
-      call('get', '/admin/statistics/credit')
-    ])
-    dashboard.value.usage = usage
-    peakStats.value = peak
-    dashboard.value.creditStats = creditStats
-    await nextTick()
-    drawUsageChart()
+  if (page === 'checkins') {
+    checkins.value = await call('get', '/admin/checkins')
+    scanHint.value = '点击「扫码签到」后，浏览器会弹出摄像头权限申请；若未弹出，请查看地址栏左侧的相机图标。'
   }
+  if (page === 'announcements') await loadAnnouncements()
+  if (page === 'statistics') await loadAdminStatistics()
   if (page === 'feedback') adminFeedback.value = await call('get', '/admin/feedback')
   if (page === 'settings') {
     operationLogs.value = await call('get', '/admin/operation-logs')
     if (role.value === 'SUPER_ADMIN') adminAccounts.value = await call('get', '/admin/admins')
   }
 }
-async function loadUsers() {
-  users.value = await call('get', '/admin/users', null, { params: { keyword: userKeyword.value } })
+function resolveUserId(rowOrId) {
+  if (rowOrId && typeof rowOrId === 'object') {
+    return rowOrId.userId ?? rowOrId.user_id ?? rowOrId.id
+  }
+  return rowOrId
 }
-async function approve(id) { await call('post', `/admin/users/${id}/approve`, {}); notify('审核通过'); loadUsers() }
-function reject(id) {
+function auditStatusLabel(status) {
+  return { PENDING: '待审核', APPROVED: '已通过', REJECTED: '已拒绝' }[status] || status || '-'
+}
+function accountStatusLabel(status) {
+  return { NORMAL: '正常', PENDING: '待审核', DISABLED: '已禁用', BLACKLIST: '黑名单' }[status] || status || '-'
+}
+function decorateUserRow(row) {
+  return {
+    ...row,
+    accountStatus: row.accountStatus || row.status,
+    auditLabel: auditStatusLabel(row.audit_status),
+    statusLabel: accountStatusLabel(row.accountStatus || row.status)
+  }
+}
+async function loadUsers() {
+  const params = { keyword: userKeyword.value || undefined }
+  if (userAuditFilter.value) params.auditStatus = userAuditFilter.value
+  users.value = (await call('get', '/admin/users', null, { params })).map(decorateUserRow)
+  userPage.value = 1
+}
+async function approve(row) {
+  const id = resolveUserId(row)
+  if (!id) return notify('无法识别用户 ID')
+  try {
+    await call('post', `/admin/users/${id}/approve`, {})
+    notify('审核通过')
+    await loadUsers()
+  } catch (e) { notify(e.message) }
+}
+function reject(row) {
+  const id = resolveUserId(row)
+  if (!id) return notify('无法识别用户 ID')
   rejectUserId.value = id
   rejectRemark.value = ''
   rejectOpen.value = true
+}
+function openChangePassword() {
+  changePasswordForm.oldPassword = ''
+  changePasswordForm.newPassword = ''
+  changePasswordForm.confirmPassword = ''
+  changePasswordOpen.value = true
+}
+async function submitChangePassword() {
+  if (!changePasswordForm.oldPassword || !changePasswordForm.newPassword || !changePasswordForm.confirmPassword) {
+    return notify('请填写完整密码信息')
+  }
+  if (changePasswordForm.newPassword !== changePasswordForm.confirmPassword) {
+    return notify('两次新密码不一致')
+  }
+  if (changePasswordForm.newPassword.length < 6 || changePasswordForm.newPassword.length > 20) {
+    return notify('新密码长度需为 6-20 位')
+  }
+  if (!/(?=.*[A-Za-z])(?=.*\d)/.test(changePasswordForm.newPassword)) {
+    return notify('新密码需同时包含字母和数字')
+  }
+  try {
+    await call('post', '/auth/change-password', {
+      oldPassword: changePasswordForm.oldPassword,
+      newPassword: changePasswordForm.newPassword
+    })
+    changePasswordOpen.value = false
+    notify('密码已修改，请使用新密码重新登录')
+    logout()
+  } catch (e) { notify(e.message) }
 }
 async function confirmReject() {
   if (!rejectUserId.value) return
@@ -1613,11 +1933,27 @@ async function confirmReject() {
     await loadUsers()
   } catch (e) { notify(e.message) }
 }
-async function disable(id) { await call('post', `/admin/users/${id}/disable`); notify('已禁用'); loadUsers() }
-async function enable(id) { await call('post', `/admin/users/${id}/enable`); notify('已启用'); loadUsers() }
+async function disable(row) {
+  const id = resolveUserId(row)
+  if (!id) return notify('无法识别用户 ID')
+  try {
+    await call('post', `/admin/users/${id}/disable`)
+    notify('已禁用')
+    await loadUsers()
+  } catch (e) { notify(e.message) }
+}
+async function enable(row) {
+  const id = resolveUserId(row)
+  if (!id) return notify('无法识别用户 ID')
+  try {
+    await call('post', `/admin/users/${id}/enable`)
+    notify('已启用')
+    await loadUsers()
+  } catch (e) { notify(e.message) }
+}
 function editRoom(r = {}) {
   Object.assign(roomForm, {
-    id: r.id,
+    id: r.id || null,
     roomCode: r.room_code || '',
     name: r.name || '',
     location: r.location || '',
@@ -1633,12 +1969,28 @@ function editRoom(r = {}) {
   roomFormExpanded.value = true
 }
 async function saveRoom() {
+  if (!roomForm.name?.trim()) return notify('请填写自习室名称')
+  if (!roomForm.location?.trim()) return notify('请填写自习室位置')
   const method = roomForm.id ? 'put' : 'post'
   const url = roomForm.id ? `/admin/rooms/${roomForm.id}` : '/admin/rooms'
-  await call(method, url, roomForm)
-  roomFormExpanded.value = false
-  notify('自习室已保存')
-  await loadRooms()
+  try {
+    await call(method, url, {
+      roomCode: roomForm.roomCode || `ROOM-${Date.now()}`,
+      name: roomForm.name.trim(),
+      location: roomForm.location.trim(),
+      floor: roomForm.floor || '1楼',
+      openTime: roomForm.openTime || '07:00:00',
+      closeTime: roomForm.closeTime || '22:30:00',
+      facilities: roomForm.facilities || '空调,WiFi',
+      layoutImageUrl: roomForm.layoutImageUrl || '',
+      rowCount: roomForm.rowCount || 4,
+      colCount: roomForm.colCount || 6,
+      status: roomForm.status || 'OPEN'
+    })
+    roomFormExpanded.value = false
+    notify('自习室已保存')
+    await loadRooms()
+  } catch (e) { notify(e.message || '保存失败') }
 }
 async function deleteRoom(r) {
   try {
@@ -1656,66 +2008,198 @@ async function toggleSeat(s) {
   await loadAdminSeats()
 }
 async function scanCheckin() {
+  if (!scanToken.value.trim()) {
+    notify('请先扫描或粘贴学生签到 token')
+    return
+  }
   try {
     await call('post', '/admin/checkin/scan', { qrToken: scanToken.value.trim() })
     notify('签到成功')
     scanToken.value = ''
+    scanHint.value = ''
     checkins.value = await call('get', '/admin/checkins')
   } catch (e) { notify(e.message) }
 }
-async function startCameraScan() {
+function triggerPhotoScan() {
+  scanPhotoInput.value?.click()
+}
+async function decodeQrFromImageFile(file) {
+  const url = URL.createObjectURL(file)
   try {
-    if (!navigator.mediaDevices?.getUserMedia) {
-      scanHint.value = '当前浏览器无法调用摄像头，请改用手动粘贴 token。'
+    const img = await new Promise((resolve, reject) => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => reject(new Error('无法读取照片'))
+      el.src = url
+    })
+    const scales = [1, 1.5, 0.75, 0.5, 2, 2.5]
+    for (const scale of scales) {
+      const token = decodeQrFromImageElement(img, scale)
+      if (token) return token
+    }
+    return ''
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+function decodeQrFromImageElement(img, scale = 1) {
+  const maxSide = 1600
+  let w = Math.round(img.naturalWidth * scale)
+  let h = Math.round(img.naturalHeight * scale)
+  if (Math.max(w, h) > maxSide) {
+    const ratio = maxSide / Math.max(w, h)
+    w = Math.round(w * ratio)
+    h = Math.round(h * ratio)
+  }
+  w = Math.max(1, w)
+  h = Math.max(1, h)
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  ctx.drawImage(img, 0, 0, w, h)
+  const imageData = ctx.getImageData(0, 0, w, h)
+  const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' })
+  return result?.data?.trim() || ''
+}
+async function onScanPhotoSelected(ev) {
+  const file = ev.target?.files?.[0]
+  if (ev.target) ev.target.value = ''
+  if (!file) return
+  scanHint.value = '正在识别照片中的二维码…'
+  try {
+    const token = await decodeQrFromImageFile(file)
+    if (!token) {
+      scanHint.value = '未识别到二维码，请重新拍照，确保二维码完整、光线充足。'
       notify(scanHint.value)
       return
     }
-    scanStream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: { facingMode: { ideal: 'environment' } }
-    })
+    scanToken.value = token
+    await scanCheckin()
+    scanHint.value = canUseLiveCamera.value
+      ? '签到成功。可继续实时扫码或拍照扫码。'
+      : '签到成功。请继续为下一位学生「拍照扫码」。'
+  } catch (e) {
+    scanHint.value = '照片解析失败，请重试。'
+    notify(e.message || scanHint.value)
+  }
+}
+function toggleCameraScan() {
+  if (isScanning.value) {
+    stopCameraScan()
+    return
+  }
+  startCameraScan()
+}
+function cameraErrorMessage(err) {
+  const name = err?.name || ''
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    return '摄像头权限被拒绝。请点击浏览器地址栏左侧的锁/相机图标 → 允许摄像头，然后再次点击「扫码签到」。'
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return '未检测到可用摄像头。请连接摄像头，或改用手动粘贴 token。'
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return '摄像头可能被其他软件占用（如微信、Zoom）。请关闭后重试。'
+  }
+  if (name === 'OverconstrainedError') {
+    return '当前摄像头不支持所需参数，请改用手动粘贴 token。'
+  }
+  if (!window.isSecureContext) {
+    return '局域网 HTTP 无法实时打开摄像头（浏览器安全限制）。请使用「拍照扫码」。'
+  }
+  const msg = err?.message ? String(err.message) : '未知错误'
+  return `摄像头启动失败：${msg}。请改用手动粘贴 token。`
+}
+async function openCameraStream() {
+  const attempts = [
+    { audio: false, video: { width: { ideal: 1280 }, height: { ideal: 720 } } },
+    { audio: false, video: { facingMode: 'user' } },
+    { audio: false, video: true }
+  ]
+  let lastError = null
+  for (const constraints of attempts) {
+    try {
+      return await navigator.mediaDevices.getUserMedia(constraints)
+    } catch (e) {
+      lastError = e
+      if (e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError') {
+        throw e
+      }
+    }
+  }
+  throw lastError || new Error('无法打开摄像头')
+}
+async function startCameraScan() {
+  cameraPermissionHint.value = ''
+  if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+    scanHint.value = cameraErrorMessage({ name: 'InsecureContext' })
+    notify(scanHint.value)
+    triggerPhotoScan()
+    return
+  }
+  if (!navigator.mediaDevices?.getUserMedia) {
+    scanHint.value = '当前浏览器不支持摄像头 API，请使用 Chrome / Edge，或改用手动粘贴 token。'
+    notify(scanHint.value)
+    return
+  }
+  try {
     isScanning.value = true
-    scanHint.value = '摄像头已打开，请将学生签到二维码放入扫描框内。'
+    scanHint.value = '正在请求摄像头权限，请在浏览器弹窗中选择「允许」…'
     await nextTick()
+    scanStream = await openCameraStream()
+    if (!scanVideo.value) {
+      await nextTick()
+    }
+    if (!scanVideo.value) {
+      throw new Error('视频组件未就绪')
+    }
     scanVideo.value.srcObject = scanStream
+    scanVideo.value.setAttribute('playsinline', 'true')
+    scanVideo.value.setAttribute('webkit-playsinline', 'true')
     await scanVideo.value.play()
+    scanHint.value = '摄像头已打开。将学生签到二维码对准框内；若不能自动识别，可复制 token 到下方输入框。'
+    cameraPermissionHint.value = ''
 
     if (!('BarcodeDetector' in window)) {
-      scanHint.value = '摄像头已打开，但当前浏览器不支持自动识别二维码；请使用手机 Chrome 或手动粘贴 token。'
-      notify('摄像头已打开，当前浏览器不支持自动识别')
+      scanHint.value = '摄像头已打开。当前浏览器不支持自动识别二维码，请让学生出示二维码后，使用 Chrome 浏览器或改用手动粘贴 token。'
+      notify('摄像头已就绪，当前浏览器需手动粘贴 token')
       return
     }
     const supportedFormats = await window.BarcodeDetector.getSupportedFormats?.()
     if (supportedFormats && !supportedFormats.includes('qr_code')) {
-      scanHint.value = '摄像头已打开，但当前浏览器不支持 QR 识别；请改用手动粘贴 token。'
-      notify('当前浏览器不支持 QR 自动识别')
+      scanHint.value = '摄像头已打开，但无法自动识别 QR 码，请改用手动粘贴 token。'
       return
     }
-
     barcodeDetector = new window.BarcodeDetector({ formats: ['qr_code'] })
     scanCameraFrame()
   } catch (e) {
-    stopCameraScan()
-    scanHint.value = '摄像头启动失败，请检查浏览器权限或改用手动粘贴 token。'
+    stopCameraScan(false)
+    scanHint.value = cameraErrorMessage(e)
+    if (e?.name === 'NotAllowedError' || e?.name === 'PermissionDeniedError') {
+      cameraPermissionHint.value = '提示：Edge/Chrome 地址栏左侧点击 🔒 或 🎥 → 站点权限 → 摄像头 → 允许，然后重新点击「扫码签到」。'
+    }
     notify(scanHint.value)
   }
 }
 async function scanCameraFrame() {
-  if (!isScanning.value || !barcodeDetector || !scanVideo.value) return
-  try {
-    const codes = await barcodeDetector.detect(scanVideo.value)
-    if (codes.length > 0) {
-      scanToken.value = codes[0].rawValue
-      stopCameraScan()
-      await scanCheckin()
-      return
+  if (!isScanning.value || !scanVideo.value) return
+  if (barcodeDetector) {
+    try {
+      const codes = await barcodeDetector.detect(scanVideo.value)
+      if (codes.length > 0) {
+        scanToken.value = codes[0].rawValue
+        stopCameraScan()
+        await scanCheckin()
+        return
+      }
+    } catch (e) {
+      scanHint.value = '正在识别二维码，请保持画面清晰稳定。'
     }
-  } catch (e) {
-    scanHint.value = '正在读取画面，请保持二维码清晰。'
   }
   scanFrame = requestAnimationFrame(scanCameraFrame)
 }
-function stopCameraScan() {
+function stopCameraScan(resetHint = true) {
   isScanning.value = false
   if (scanFrame) {
     cancelAnimationFrame(scanFrame)
@@ -1727,7 +2211,10 @@ function stopCameraScan() {
   }
   if (scanVideo.value) scanVideo.value.srcObject = null
   barcodeDetector = null
-  scanHint.value = '手机端可打开摄像头扫描学生二维码，也可手动粘贴 token。'
+  if (resetHint) {
+    scanHint.value = ''
+    cameraPermissionHint.value = ''
+  }
 }
 function editAnnouncement(a = {}) {
   Object.assign(announcementForm, { id: a.id, title: a.title || '', content: a.content || '', type: a.type || 'SYSTEM', pinned: !!a.pinned })
@@ -1740,13 +2227,56 @@ async function saveAnnouncement() {
   notify('公告已保存')
   await loadAnnouncements()
 }
-async function handleFeedback(id) {
-  await call('put', `/admin/feedback/${id}`, { status: 'DONE', handleResult: '已处理并记录' })
-  notify('反馈已处理')
-  adminFeedback.value = await call('get', '/admin/feedback')
+function openFeedbackHandle(row) {
+  feedbackHandleForm.id = row.id
+  feedbackHandleForm.studentName = row.studentName
+  feedbackHandleForm.type = row.type
+  feedbackHandleForm.content = row.content
+  feedbackHandleForm.handleResult = ''
+  feedbackHandleOpen.value = true
+}
+async function submitFeedbackHandle() {
+  if (!feedbackHandleForm.handleResult?.trim()) return notify('请填写处理说明')
+  try {
+    await call('put', `/admin/feedback/${feedbackHandleForm.id}`, {
+      status: 'DONE',
+      handleResult: feedbackHandleForm.handleResult.trim()
+    })
+    feedbackHandleOpen.value = false
+    notify('反馈已处理，已通知学生')
+    adminFeedback.value = await call('get', '/admin/feedback')
+  } catch (e) { notify(e.message) }
+}
+async function addAdminSeat() {
+  if (!adminSeatRoomId.value) return notify('请先选择自习室')
+  try {
+    await call('post', `/admin/rooms/${adminSeatRoomId.value}/seats`, {})
+    notify('已新增座位')
+    await loadAdminSeats()
+    await loadRooms()
+  } catch (e) { notify(e.message) }
+}
+async function deleteSeatEdit() {
+  if (!seatEditForm.id) return
+  openModalConfirm('删除座位', '删除后不可恢复，确定删除该座位吗？', async () => {
+    try {
+      await call('delete', `/admin/seats/${seatEditForm.id}`)
+      seatEditOpen.value = false
+      notify('座位已删除')
+      await loadAdminSeats()
+      await loadRooms()
+    } catch (e) { notify(e.message) }
+  })
+}
+async function loadAdminStatistics() {
+  try {
+    adminStatsReport.value = await call('get', '/admin/statistics/report', null, { params: { period: adminStatsPeriod.value } })
+    await nextTick()
+    drawUsageChart()
+  } catch (e) { notify(e.message) }
 }
 function downloadReport() {
-  api.get('/admin/statistics/export', { responseType: 'blob' }).then(res => {
+  api.get('/admin/statistics/export', { responseType: 'blob', params: { period: adminStatsPeriod.value } }).then(res => {
     const url = URL.createObjectURL(res.data)
     const a = document.createElement('a')
     a.href = url
@@ -1777,29 +2307,41 @@ function drawAdminChart() {
 function drawUsageChart() {
   if (!usageChart.value) return
   const chart = echarts.init(usageChart.value)
+  const periodLabel = adminStatsReport.value.summary?.periodLabel || '今日'
   if (statAdminView.value === 'peak') {
-    const data = peakStats.value || []
+    const data = adminStatsReport.value.peak?.length ? adminStatsReport.value.peak : (peakStats.value || [])
     chart.setOption({
       tooltip: {},
-      title: { text: '高峰时段分析', left: 'center', textStyle: { fontSize: 14 } },
+      title: { text: `${periodLabel}高峰时段`, left: 'center', textStyle: { fontSize: 14 } },
       xAxis: { type: 'category', data: data.map(x => `${x.hour}时`) },
       yAxis: { type: 'value' },
       series: [{ type: 'bar', data: data.map(x => x.count), itemStyle: { color: '#4f6ef7' } }]
     }, true)
     return
   }
-  const data = dashboard.value.usage || []
+  const data = adminStatsReport.value.usage?.length ? adminStatsReport.value.usage : (dashboard.value.usage || [])
   if (statAdminView.value === 'share') {
     chart.setOption({
       tooltip: {},
-      title: { text: '自习室使用占比', left: 'center', textStyle: { fontSize: 14 } },
+      title: { text: `${periodLabel}自习室预约占比`, left: 'center', textStyle: { fontSize: 14 } },
       series: [{ type: 'pie', radius: '70%', data: data.map(x => ({ name: x.roomName, value: x.reservationCount || x.usageRate })) }]
+    }, true)
+    return
+  }
+  const trend = adminStatsReport.value.trend || []
+  if (trend.length) {
+    chart.setOption({
+      tooltip: {},
+      title: { text: `${periodLabel}预约趋势`, left: 'center', textStyle: { fontSize: 14 } },
+      xAxis: { type: 'category', data: trend.map(x => x.label) },
+      yAxis: { type: 'value' },
+      series: [{ type: 'line', smooth: true, data: trend.map(x => x.count), itemStyle: { color: '#6c5ce7' } }]
     }, true)
     return
   }
   chart.setOption({
     tooltip: {},
-    title: { text: '各自习室使用率', left: 'center', textStyle: { fontSize: 14 } },
+    title: { text: `${periodLabel}各自习室使用率`, left: 'center', textStyle: { fontSize: 14 } },
     xAxis: { type: 'category', data: data.map(x => x.roomName) },
     yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
     series: [{ type: 'bar', data: data.map(x => x.usageRate), itemStyle: { color: '#6c5ce7' } }]
@@ -1838,12 +2380,20 @@ const FeedbackBox = defineComponent({
   }
 })
 const DataTable = defineComponent({
-  props: { rows: Array, columns: Array },
+  props: { rows: Array, columns: Array, columnLabels: { type: Object, default: () => ADMIN_COLUMN_LABELS }, emptyText: { type: String, default: '暂无数据' } },
   setup(props, { slots }) {
-    return () => h('div', { class: 'table-wrap' }, h('table', [
-      h('thead', h('tr', [...props.columns.map(c => h('th', c)), h('th', '操作')])),
-      h('tbody', (props.rows || []).map(row => h('tr', [...props.columns.map(c => h('td', String(row[c] ?? ''))), h('td', slots.actions ? slots.actions({ row }) : '')])))
-    ]))
+    const label = c => props.columnLabels[c] || c
+    const cell = (c, row) => formatAdminCell(c, row[c], row)
+    return () => h('div', { class: 'table-wrap' }, [
+      !(props.rows || []).length ? h('p', { class: 'muted table-empty' }, props.emptyText) : null,
+      h('table', [
+        h('thead', h('tr', [...props.columns.map(c => h('th', label(c))), slots.actions ? h('th', '操作') : null].filter(Boolean))),
+        h('tbody', (props.rows || []).map(row => h('tr', [
+          ...props.columns.map(c => h('td', cell(c, row))),
+          slots.actions ? h('td', slots.actions({ row })) : null
+        ].filter(Boolean))))
+      ])
+    ])
   }
 })
 
@@ -1856,8 +2406,14 @@ onMounted(() => {
   studyTimerHandle = setInterval(updateStudyTimer, 1000)
   bootstrap()
 })
+watch(studentPage, (page) => {
+  if (page === 'checkin') startCheckinPagePoll()
+  else stopCheckinPagePoll()
+}, { immediate: true })
 onBeforeUnmount(() => {
   stopCameraScan()
+  closeQrModal()
+  stopCheckinPagePoll()
   if (studyTimerHandle) clearInterval(studyTimerHandle)
 })
 </script>
