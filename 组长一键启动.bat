@@ -77,7 +77,12 @@ if not exist "%PWD_FILE%" (
         pause
         exit /b 1
     )
-    powershell -NoProfile -Command "[IO.File]::WriteAllText($env:TEMP + '\csrrm_mysql_pwd.txt', $env:MYSQL_PW)"
+    call powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\write-leader-pwd.ps1"
+    if errorlevel 1 (
+        echo [错误] 未能保存 MySQL 密码，请重新运行并输入密码。
+        pause
+        exit /b 1
+    )
 )
 
 REM ---------- 4. 是否导入数据库 ----------

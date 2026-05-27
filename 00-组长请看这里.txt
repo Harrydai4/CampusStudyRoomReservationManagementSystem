@@ -2,32 +2,33 @@
 ║  校园自习室预约系统 · 组长/验收 · 从这里开始（无需 Git）      ║
 ╚══════════════════════════════════════════════════════════════╝
 
-【你要做的只有 3 步】
+【启动入口 — 按顺序尝试】
 
-  ① 下载 ZIP（推荐直链，含完整数据库）
-     https://github.com/Harrydai4/CampusStudyRoomReservationManagementSystem/archive/refs/heads/v1.3-harrydai4.zip
+  ① 双击 【组长一键启动.bat】  （最可靠，推荐）
+  ② 若不行，双击 【组长一键启动.cmd】
+  ③ 【组长一键启动.vbs】 若双击无反应，请用 ① 或 ②
 
-  ② 解压后进入本文件夹（能看到 pom.xml 与本文件）
+  ZIP 从网页下载后：右键解压后的文件夹 → 属性 → 若有「解除锁定」请勾选
 
-  ③ 双击下面这个文件启动 ──────────────────────────────┐
-                                                        │
-     ┌──────────────────────────────────────────────────┘
-     │
-     ▼
-     【组长一键启动.vbs】  ← 与本文件在同一目录（项目根目录）
+【下载 ZIP】
+  https://github.com/Harrydai4/CampusStudyRoomReservationManagementSystem/archive/refs/heads/v1.3-harrydai4.zip
 
-     按提示输入：本机 MySQL 的 root 密码
-     首次启动：选「是」导入数据库
-     等待浏览器打开：http://localhost:8080
+【操作步骤】
+  1. 解压，进入含 pom.xml 的文件夹（与本文件同目录）
+  2. 双击 组长一键启动.bat
+  3. 输入本机 MySQL 的 root 密码（不是 admin123！）
+  4. 首次选 Y 导入数据库
+  5. 保留「CSRRM-Backend」窗口，浏览器打开 http://localhost:8080
 
-【浏览器登录（不是 MySQL 密码）】
+【浏览器登录】
   管理员  admin / admin123
   学生    202301010101 / 123456
 
-【事先安装】JDK 21+、MySQL 8（mysql 命令在 PATH 中）
+【MySQL 报「权限 / Access denied」】
+  - 密码必须是本机 MySQL root 密码（与提交者可以不同）
+  - 先用 cmd 测试：mysql -h 127.0.0.1 -u root -p
+  - 能登录后再运行 bat
 
-【备用启动】若 vbs 无法运行，可双击：组长一键启动.bat
+【事先安装】JDK 21+、MySQL 8（bin 在 PATH）
 
-【详细说明】组长复现指南.md（与本文件同目录）
-
-【相关文件位置一览】见：解压后目录说明.md
+详细说明：组长复现指南.md · 目录说明：解压后目录说明.md

@@ -40,6 +40,7 @@ if (-not $Password) {
         [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
 }
 
+$initLeaderSql = Join-Path $cfgDir "init-local-leader.sql"
 $initSql = Join-Path $cfgDir "init-shared-mysql.sql"
 $schemaSql = Join-Path $cfgDir "schema.sql"
 $dataSql = Join-Path $cfgDir "data.sql"
@@ -50,19 +51,31 @@ $env:MYSQL_PWD = $Password
 function Invoke-SqlFile {
     param([string]$Path, [string]$DatabaseName = "")
     $mysqlExe = (Get-Command mysql).Source
-    $args = @("-h", $DbHost, "-P", "$Port", "-u", $User)
+    $args = @("-h", $DbHost, "-P", "$Port", "--protocol=TCP", "-u", $User)
     if ($DatabaseName) { $args += $DatabaseName }
     $argLine = ($args | ForEach-Object { if ($_ -match '\s') { "`"$_`"" } else { $_ } }) -join " "
-    $cmd = "`"$mysqlExe`" $argLine < `"$Path`""
-    cmd /c $cmd
-    if ($LASTEXITCODE -ne 0) { throw "mysql failed: $Path" }
+    $cmd = "`"$mysqlExe`" $argLine < `"$Path`" 2>&1"
+    $out = cmd /c $cmd
+    if ($LASTEXITCODE -ne 0) {
+        $msg = ($out | Out-String).Trim()
+        if ($msg -match 'Access denied') {
+            throw "MySQL Access denied: wrong root password or no permission. $msg"
+        }
+        throw "mysql failed ($Path): $msg"
+    }
 }
 
 try {
     Write-Host "=== Import CSRRM database from repo SQL ===" -ForegroundColor Cyan
 
-    if ($UseFullDump -and (Test-Path $fullSql)) {
-        if (Test-Path $initSql) { Invoke-SqlFile -Path $initSql }
+    if ($UseFullDump -and (Test-Path -LiteralPath $fullSql)) {
+        # 组长本机：只用建库脚本，不跑 init-shared-mysql（避免 CREATE USER 权限错误）
+        if (Test-Path -LiteralPath $initLeaderSql) {
+            Invoke-SqlFile -Path $initLeaderSql
+        } elseif (Test-Path -LiteralPath $initSql) {
+            Write-Host "WARN: using init-shared-mysql.sql (needs CREATE USER privilege)" -ForegroundColor Yellow
+            Invoke-SqlFile -Path $initSql
+        }
         Invoke-SqlFile -Path $fullSql -DatabaseName "study_room_reservation"
         Write-Host "OK: imported database-full.sql (snapshot restored)" -ForegroundColor Green
         Write-Host "Tip: set app.demo.sync-accounts-on-startup=false in application-local.properties" -ForegroundColor Yellow
