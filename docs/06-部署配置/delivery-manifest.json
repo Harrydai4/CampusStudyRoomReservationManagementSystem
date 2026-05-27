@@ -3,10 +3,15 @@
   "database": "study_room_reservation",
   "sqlFiles": ["schema.sql", "data.sql", "database-full.sql"],
   "uploadCount": 8,
-  "leaderScript": "scripts/setup-after-clone.ps1",
-  "leaderGuide": "组长复现指南.md",
   "branch": "master",
-  "zipDownload": "GitHub Code -> Download ZIP (no git checkout required)",
-  "leaderLauncher": "组长一键启动.vbs",
-  "note": "SQL dump matches author MySQL at export time; leader uses own MySQL root password locally"
+  "zipUrl": "https://github.com/Harrydai4/CampusStudyRoomReservationManagementSystem/archive/refs/heads/v1.3-harrydai4.zip",
+  "leaderEntry": {
+    "quickStart": "00-组长请看这里.txt",
+    "launcherVbs": "组长一键启动.vbs",
+    "launcherBat": "组长一键启动.bat",
+    "detailGuide": "组长复现指南.md",
+    "directoryMap": "解压后目录说明.md"
+  },
+  "leaderScript": "scripts/setup-after-clone.ps1",
+  "note": "All leader files are in project root (same folder as pom.xml). No git checkout required."
 }
