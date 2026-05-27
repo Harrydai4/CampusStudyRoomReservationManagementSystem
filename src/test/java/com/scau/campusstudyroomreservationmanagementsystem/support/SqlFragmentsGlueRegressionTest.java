@@ -16,11 +16,11 @@ class SqlFragmentsGlueRegressionTest {
         assertFalse(SqlFragments.hasGlueBug(weeklyWhere));
 
         String peakSql = SqlFragments.join("""
-                select hour(r.start_time) hour, count(*) count
+                select hour(r.start_time) AS peakHour, count(*) AS cnt
                 from reservation r
                 join study_room sr on sr.id=r.room_id""",
                 SqlFragments.join("where", "r.reserve_date=current_date()", "and", "sr.manager_id=1"),
-                "group by hour(r.start_time)", "order by hour");
+                "group by hour(r.start_time)", "order by hour(r.start_time)");
         assertFalse(SqlFragments.hasGlueBug(peakSql));
         assertTrue(peakSql.contains("where r.reserve_date"));
         assertTrue(peakSql.contains("manager_id=1 group by"));

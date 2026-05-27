@@ -107,23 +107,28 @@
           </div>
 
           <h2 class="section-title">⏱️ 选择时段</h2>
+          <p v-if="currentRoom" class="scanner-hint">当前自习室开放时间：{{ currentRoomOpenTime }} — {{ currentRoomCloseTime }}（以下选项随所选自习室自动变化）</p>
           <div class="time-slots">
-            <button v-for="slot in quickTimeSlots" :key="slot.label" type="button" class="time-chip" :class="{ active: isQuickSlotActive(slot) }" @click="applyQuickSlot(slot)">{{ slot.label }}</button>
+            <button v-for="slot in availableQuickTimeSlots" :key="slot.label" type="button" class="time-chip" :class="{ active: isQuickSlotActive(slot), disabled: slot.expired }" :disabled="slot.expired" @click="applyQuickSlot(slot)">{{ slot.label }}{{ slot.expired ? '（已过期）' : '' }}</button>
           </div>
           <div class="card reserve-config">
             <div class="time-select-row">
               <label>开始</label>
-              <el-time-select v-model="reservationForm.startTime" start="07:00" step="00:10" end="22:20" @change="handleStartTimeChange" />
+              <el-select v-model="reservationForm.startTime" placeholder="请选择开始时间" :teleported="false" @change="handleStartTimeChange">
+                <el-option v-for="t in startTimeOptions" :key="`s-${t}`" :label="t" :value="t" />
+              </el-select>
               <span>→</span>
               <label>结束</label>
-              <el-time-select v-model="reservationForm.endTime" :start="endSelectStart" step="00:10" end="22:30" @change="handleEndTimeChange" />
+              <el-select v-model="reservationForm.endTime" placeholder="请选择结束时间" :teleported="false" @change="handleEndTimeChange">
+                <el-option v-for="t in endTimeOptions" :key="`e-${t}`" :label="t" :value="t" />
+              </el-select>
             </div>
           </div>
 
           <h2 class="section-title">🧮 预约配置</h2>
           <div class="card reserve-config">
             <label>自习室</label>
-            <el-select v-model="reservationForm.roomId" @change="loadAvailableSeats">
+            <el-select v-model="reservationForm.roomId" @change="handleRoomChange">
               <el-option v-for="r in rooms" :key="r.id" :label="`${r.name}（余${r.availableSeats}）`" :value="r.id" />
             </el-select>
           </div>
@@ -168,7 +173,8 @@
               <div class="check-wait-card card">
                 <strong>等待管理员签到</strong>
                 <p class="check-student-no">学号：<span>{{ studentNoDisplay }}</span></p>
-                <p class="muted check-wait-tip">请向管理员报学号；无需二维码，签到成功后本页自动更新</p>
+                <div v-if="checkinQrSvg" class="qr-image checkin-qr" v-html="checkinQrSvg"></div>
+                <p class="muted check-wait-tip">可向管理员<strong>报学号</strong>，或出示上方二维码供管理员<strong>拍照扫码</strong>（无需 token）</p>
               </div>
               <div class="check-actions-state">
                 <button type="button" class="round-action warning-round" @click="openFeedbackModal">
@@ -243,7 +249,7 @@
           <div class="card credit-ring-card">
             <div class="credit-ring" :style="{ '--score': creditPercent + '%' }">
               <strong>{{ credit.score }}</strong>
-              <span>/ 300</span>
+              <span>/ {{ CREDIT_SCORE_MAX }}</span>
             </div>
             <b>{{ creditLevel }}</b>
           </div>
@@ -254,12 +260,12 @@
           </div>
           <h2 class="section-title">📜 积分变动记录</h2>
           <div class="credit-rules card">
-            <div class="credit-rule"><strong>按时签到</strong> +10 分；超时未签到 -50 分；暂离超时 -30 分。</div>
-            <div class="credit-rule"><strong>信用等级</strong>：280 分以上优秀，200 分以上良好，低于 200 需改进。</div>
+            <div class="credit-rule"><strong>按时签到</strong> +5 分；主动取消预约 -50 分；超时未签到 -50 分；暂离超时 -30 分。</div>
+            <div class="credit-rule"><strong>积分上限</strong> {{ CREDIT_SCORE_MAX }} 分；280 分以上优秀，200 分以上良好。</div>
           </div>
           <div class="timeline">
             <div v-for="l in credit.logs" :key="l.id" class="timeline-item">
-              <strong>{{ l.change_value > 0 ? '+' : '' }}{{ l.change_value }}</strong>
+              <strong :class="Number(l.change_value) >= 0 ? 'credit-gain' : 'credit-deduct'">{{ Number(l.change_value) > 0 ? '+' : '' }}{{ l.change_value }}</strong>
               <span>{{ l.reason }}</span>
               <small>{{ l.created_at }}</small>
             </div>
@@ -279,7 +285,7 @@
             <h2>{{ studyChartTitle }}</h2>
             <div class="bar-chart-lite">
               <div v-for="b in studyBars" :key="b.label" class="bar-col">
-                <strong>{{ b.value }}</strong>
+                <strong>{{ b.value }}<span class="bar-unit">小时</span></strong>
                 <div class="bar-track">
                   <span :style="{ height: `${barHeight(b.value)}%` }"></span>
                 </div>
@@ -343,6 +349,13 @@
         <strong>管理后台</strong>
         <button v-for="n in adminNav" :key="n.page" type="button" class="admin-side-item" :class="{ active: adminPage === n.page }" @click="openAdmin(n.page)">{{ n.icon }} {{ n.label }}</button>
         <button type="button" class="admin-side-item" @click="logout">🚪 退出</button>
+        <div class="admin-profile-chip" aria-label="当前管理员信息">
+          <div class="admin-profile-avatar">{{ adminProfileInitial }}</div>
+          <div class="admin-profile-meta">
+            <strong>{{ me.name || me.account || '管理员' }}</strong>
+            <span>{{ adminRoleLabel }}</span>
+          </div>
+        </div>
       </aside>
       <div class="admin-main">
         <header class="topbar">
@@ -354,28 +367,19 @@
         </nav>
 
         <main class="content admin-content">
-          <template v-if="adminPage === 'dashboard'">
-            <div class="admin-dashboard-grid">
-              <div class="stat-card"><div class="lbl">今日预约</div><div class="num">{{ dashboard.todayReservations ?? 0 }}</div></div>
-              <div class="stat-card"><div class="lbl">活跃用户</div><div class="num">{{ dashboard.activeUsers ?? 0 }}</div></div>
-              <div class="stat-card"><div class="lbl">座位使用率</div><div class="num">{{ dashboard.seatUsageRate ?? 0 }}%</div></div>
-              <div class="stat-card"><div class="lbl">今日违约</div><div class="num">{{ dashboard.violationToday ?? 0 }}</div></div>
-            </div>
-            <div class="card">
-              <h3 class="section-title">本周预约趋势</h3>
-              <div ref="adminChart" class="chart"></div>
-            </div>
-            <h3 class="section-title">实时预约</h3>
-            <DataTable :rows="decoratedLiveReservations" :columns="['studentNo','studentName','roomName','seatNo','reserveDate','status']" />
-          </template>
-
           <template v-if="adminPage === 'users'">
+            <div class="admin-head-actions">
+              <h3 class="section-title">学生用户管理</h3>
+              <button type="button" class="btn btn-primary" @click="exportUsersCsv">导出 CSV</button>
+            </div>
+            <p class="scanner-hint">审核注册申请、禁用/启用学生账号；导出包含当前筛选条件下的全部学生。</p>
             <el-input v-model="userKeyword" placeholder="搜索学号或姓名" @input="loadUsers" />
             <div class="filter-row user-audit-filters">
               <button v-for="f in userAuditFilters" :key="f.key" type="button" :class="{ active: userAuditFilter === f.key }" @click="userAuditFilter = f.key; loadUsers()">{{ f.label }}</button>
             </div>
             <DataTable :rows="pagedUsers" :columns="['student_no','name','college','credit_score','auditLabel','statusLabel']" empty-text="暂无用户数据">
               <template #actions="{ row }">
+                <el-button size="small" @click="openUserDetail(row)">详情</el-button>
                 <el-button v-if="row.audit_status === 'PENDING'" size="small" type="success" @click="approve(row)">通过</el-button>
                 <el-button v-if="row.audit_status === 'PENDING'" size="small" type="warning" @click="reject(row)">拒绝</el-button>
                 <el-button v-if="row.accountStatus !== 'DISABLED' && row.audit_status === 'APPROVED'" size="small" @click="disable(row)">禁用</el-button>
@@ -385,40 +389,45 @@
             <div class="admin-pager">
               <button v-for="p in userTotalPages" :key="p" type="button" :class="{ active: userPage === p }" @click="userPage = p">{{ p }}</button>
             </div>
+            <p v-if="users.length" class="admin-pager-meta scanner-hint">共 {{ users.length }} 条 · 第 {{ userPage }}/{{ userTotalPages }} 页</p>
+          </template>
+
+          <template v-if="adminPage === 'admins'">
+            <div class="admin-head-actions">
+              <h3>管理员管理</h3>
+              <button v-if="isSuperAdmin" type="button" class="btn btn-primary" @click="openAdminForm()">新增管理员</button>
+            </div>
+            <p v-if="!isSuperAdmin" class="scanner-hint">仅超级管理员可新增、编辑或禁用其他管理员；您当前只能查看自己的账号信息。</p>
+            <p v-else class="scanner-hint">超级管理员可分配图书馆负责人、新增/编辑/禁用普通管理员账号。</p>
+            <el-input v-model="adminKeyword" placeholder="搜索账号或姓名" clearable />
+            <div class="filter-row user-audit-filters">
+              <button v-for="f in adminStatusFilters" :key="f.key" type="button" :class="{ active: adminStatusFilter === f.key }" @click="adminStatusFilter = f.key">{{ f.label }}</button>
+            </div>
+            <DataTable :rows="pagedAdminAccounts" :columns="adminAccountColumns" empty-text="暂无管理员">
+              <template #actions="{ row }">
+                <template v-if="isSuperAdmin">
+                  <el-button v-if="row.role !== 'SUPER_ADMIN'" size="small" @click="openAdminForm(row)">编辑</el-button>
+                  <el-button v-if="row.status !== 'DISABLED' && row.id !== me.id && row.role !== 'SUPER_ADMIN'" size="small" type="warning" @click="disableAdminAccount(row)">禁用</el-button>
+                  <el-button v-if="row.status === 'DISABLED'" size="small" type="success" @click="enableAdminAccount(row)">启用</el-button>
+                </template>
+                <span v-else class="muted">—</span>
+              </template>
+            </DataTable>
+            <AdminPager v-model:page="adminAccountPage" :total="adminAccountTotalPages" :count="filteredAdminAccounts.length" />
           </template>
 
           <template v-if="adminPage === 'rooms'">
             <div class="admin-head-actions">
               <h3>自习室管理</h3>
-              <button type="button" class="btn btn-primary" @click="toggleRoomForm">{{ roomFormExpanded ? '收起表单' : '新增自习室' }}</button>
+              <button v-if="isSuperAdmin" type="button" class="btn btn-primary" @click="openRoomFormCreate">新增自习室</button>
             </div>
-            <div v-if="roomFormExpanded" class="room-form-panel">
-              <h3>{{ roomForm.id ? '编辑自习室' : '新增自习室' }}</h3>
-              <div class="room-row">
-                <div class="field"><label>编号</label><input v-model="roomForm.roomCode" class="input" placeholder="编号" /></div>
-                <div class="field"><label>名称</label><input v-model="roomForm.name" class="input" placeholder="名称" /></div>
-              </div>
-              <div class="room-row">
-                <div class="field"><label>位置</label><input v-model="roomForm.location" class="input" placeholder="位置" /></div>
-                <div class="field"><label>楼层</label><input v-model="roomForm.floor" class="input" placeholder="楼层" /></div>
-              </div>
-              <div class="room-row">
-                <div class="field"><label>开放开始</label><input v-model="roomForm.openTime" class="input" placeholder="07:00:00" /></div>
-                <div class="field"><label>开放结束</label><input v-model="roomForm.closeTime" class="input" placeholder="22:30:00" /></div>
-              </div>
-              <div class="field"><label>设施（逗号分隔）</label><input v-model="roomForm.facilities" class="input" placeholder="空调,WiFi" /></div>
-              <div class="field"><label>分布图地址</label><input v-model="roomForm.layoutImageUrl" class="input" placeholder="上传后自动填入" /></div>
-              <div class="upload-row">
-                <input type="file" accept="image/*" @change="uploadLayoutImage" />
-                <img v-if="roomForm.layoutImageUrl" class="layout-preview" :src="assetUrl(roomForm.layoutImageUrl)" alt="预览" />
-              </div>
-              <div class="room-row">
-                <div class="field"><label>行数</label><input v-model.number="roomForm.rowCount" class="input" type="number" min="1" max="20" /></div>
-                <div class="field"><label>列数</label><input v-model.number="roomForm.colCount" class="input" type="number" min="1" max="20" /></div>
-              </div>
-              <button type="button" class="btn btn-primary btn-block" @click="saveRoom">保存自习室</button>
+            <p v-if="!isSuperAdmin" class="scanner-hint">普通管理员仅可编辑本人负责的自习室；点击「编辑」可在同一界面管理座位网格。</p>
+            <p v-else class="scanner-hint">超级管理员可新增/删除自习室，并为每个自习室指定图书馆负责人。点击「编辑」可在同一界面管理座位网格。</p>
+            <el-input v-model="roomKeyword" placeholder="搜索名称、位置或楼层" clearable />
+            <div class="filter-row user-audit-filters">
+              <button v-for="f in roomStatusFilters" :key="f.key" type="button" :class="{ active: roomStatusFilter === f.key }" @click="roomStatusFilter = f.key">{{ f.label }}</button>
             </div>
-            <article class="room-item" v-for="r in rooms" :key="r.id">
+            <article class="room-item" v-for="r in pagedRooms" :key="r.id">
               <div>
                 <div class="room-item-head"><strong>{{ r.name }}</strong><span class="mini-badge active">余 {{ r.availableSeats ?? r.available_seats ?? 0 }}</span></div>
                 <p class="muted">{{ r.location }} · {{ r.floor || '未设置' }} · {{ roomStatusText(r.status) }}</p>
@@ -428,57 +437,62 @@
               </div>
               <div>
                 <button type="button" class="btn btn-outline" @click="editRoom(r)">编辑</button>
-                <button type="button" class="btn btn-danger" @click="deleteRoom(r)">删除</button>
+                <button v-if="isSuperAdmin" type="button" class="btn btn-danger" @click="deleteRoom(r)">删除</button>
               </div>
             </article>
-          </template>
-
-          <template v-if="adminPage === 'seats'">
-            <div class="admin-head-actions">
-              <el-select v-model="adminSeatRoomId" placeholder="选择自习室" @change="loadAdminSeats" style="min-width:220px">
-                <el-option v-for="r in rooms" :key="r.id" :label="r.name" :value="r.id" />
-              </el-select>
-              <button type="button" class="btn btn-primary" :disabled="!adminSeatRoomId" @click="addAdminSeat">新增座位</button>
-            </div>
-            <p class="scanner-hint">点击格子可编辑属性；删除前请确认无进行中预约。</p>
-            <div class="seat-map-grid" :style="{ gridTemplateColumns: `repeat(${adminRoom?.col_count || 6}, minmax(0, 1fr))` }">
-              <button
-                v-for="(s, idx) in adminSeats"
-                :key="s.id"
-                type="button"
-                class="cell-grid-btn"
-                :class="seatCellClass(s)"
-                @click="openSeatEdit(s)"
-              >
-                <div>R{{ s.row_no || Math.floor(idx / (adminRoom?.col_count || 6)) + 1 }}-C{{ s.col_no || (idx % (adminRoom?.col_count || 6)) + 1 }}</div>
-                <div class="cell-tags">
-                  <span v-for="tag in seatCellTags(s)" :key="tag" class="cell-tag">{{ tag }}</span>
-                </div>
-              </button>
-            </div>
+            <AdminPager v-model:page="roomPage" :total="roomTotalPages" :count="filteredRooms.length" />
           </template>
 
           <template v-if="adminPage === 'reservations'">
-            <DataTable :rows="decoratedAdminReservations" :columns="['reservation_no','studentName','roomName','seatNo','reserve_date','status']" empty-text="暂无预约记录" />
+            <p class="scanner-hint">可按学号、姓名、预约号、自习室筛选；违约记录可在此撤销并恢复信用分。</p>
+            <el-input v-model="reservationKeyword" placeholder="搜索学号、姓名、预约号或自习室" clearable />
+            <div class="filter-row user-audit-filters">
+              <button v-for="f in reservationAdminStatusFilters" :key="f.key" type="button" :class="{ active: reservationStatusFilter === f.key }" @click="reservationStatusFilter = f.key">{{ f.label }}</button>
+            </div>
+            <el-select v-model="reservationRoomFilter" placeholder="全部自习室" clearable style="min-width:220px;margin-bottom:12px">
+              <el-option v-for="r in rooms" :key="r.id" :label="r.name" :value="r.id" />
+            </el-select>
+            <DataTable :rows="pagedAdminReservations" :columns="['reservation_no','studentName','roomName','seatNo','reserve_date','status','cancel_reason']" empty-text="暂无预约记录">
+              <template #actions="{ row }">
+                <el-button v-if="['VIOLATED','AUTO_CANCELLED'].includes(row._rawStatus)" size="small" type="warning" @click="openRevokeViolation(row)">撤销违约</el-button>
+                <span v-else class="muted">—</span>
+              </template>
+            </DataTable>
+            <AdminPager v-model:page="reservationPage" :total="reservationTotalPages" :count="filteredAdminReservations.length" />
           </template>
 
           <template v-if="adminPage === 'checkins'">
             <div class="card scan-box">
-              <p class="scanner-hint">输入学生<strong>学号</strong>（如 202301010101）后点击「确认签到」。学生端无需生成二维码。</p>
+              <p class="scanner-hint">{{ scanHint || '优先「确认签到」输入学号（最稳）；拍照扫码为辅助，部分手机因照片格式/屏幕摩尔纹可能识别失败。' }}</p>
+              <div class="scanner-toolbar">
+                <button type="button" class="btn btn-primary" :disabled="scanBusy" @click="triggerPhotoScan">{{ scanBusy ? '处理中…' : '拍照扫码' }}</button>
+                <button type="button" class="btn btn-outline" :disabled="scanBusy || !scanStudentNo.trim()" @click="scanCheckin">{{ scanBusy ? '提交中…' : '确认签到' }}</button>
+                <input ref="scanPhotoInput" type="file" accept="image/*" capture="environment" class="scan-photo-input" @change="onScanPhotoSelected" />
+              </div>
               <div class="scan-student-row">
-                <input v-model="scanStudentNo" class="input" placeholder="请输入学生学号" maxlength="20" @keyup.enter="scanCheckin" />
-                <button type="button" class="btn btn-primary" :disabled="!scanStudentNo.trim()" @click="scanCheckin">确认签到</button>
+                <input v-model="scanStudentNo" class="input" placeholder="请输入学生学号，如 202301010101" maxlength="20" :disabled="scanBusy" @keyup.enter="scanCheckin" />
               </div>
             </div>
-            <DataTable :rows="decoratedCheckins" :columns="['studentName','roomName','seatNo','checkin_time','checkout_time','result']" empty-text="暂无签到记录" />
+            <el-input v-model="checkinKeyword" placeholder="搜索学号、姓名、自习室或座位" clearable />
+            <div class="filter-row user-audit-filters">
+              <button v-for="f in checkinResultFilters" :key="f.key" type="button" :class="{ active: checkinResultFilter === f.key }" @click="checkinResultFilter = f.key">{{ f.label }}</button>
+            </div>
+            <DataTable :rows="pagedCheckins" :columns="['studentName','roomName','seatNo','checkin_time','checkout_time','result']" empty-text="暂无签到记录" />
+            <AdminPager v-model:page="checkinPage" :total="checkinTotalPages" :count="filteredCheckins.length" />
+            <h3 class="section-title">实时预约</h3>
+            <p class="scanner-hint">待签到、使用中、暂离中的预约（进入本页时自动刷新）。</p>
+            <DataTable :rows="pagedLiveReservations" :columns="['studentNo','studentName','roomName','seatNo','reserveDate','status']" empty-text="暂无进行中的预约" />
+            <AdminPager v-model:page="liveReservationPage" :total="liveReservationTotalPages" :count="decoratedLiveReservations.length" />
           </template>
 
           <template v-if="adminPage === 'announcements'">
+            <el-input v-model="announcementKeyword" placeholder="搜索公告标题或内容" clearable style="margin-bottom:12px" />
             <el-button type="primary" @click="editAnnouncement()">发布公告</el-button>
-            <article class="card announcement" v-for="a in announcements" :key="a.id">
+            <article class="card announcement" v-for="a in pagedAnnouncements" :key="a.id">
               <strong>{{ a.title }}</strong><p>{{ a.content }}</p>
               <el-button size="small" @click="editAnnouncement(a)">编辑</el-button>
             </article>
+            <AdminPager v-model:page="announcementPage" :total="announcementTotalPages" :count="filteredAnnouncements.length" />
           </template>
 
           <template v-if="adminPage === 'statistics'">
@@ -486,41 +500,67 @@
               <h3>统计分析</h3>
               <button type="button" class="btn btn-primary" @click="downloadReport">导出报表</button>
             </div>
+            <el-select v-model="adminStatsRoomId" placeholder="全部自习室（汇总）" clearable style="width:100%;max-width:360px;margin-bottom:12px" @change="loadAdminStatistics">
+              <el-option label="全部自习室（汇总）" :value="null" />
+              <el-option v-for="r in rooms" :key="r.id" :label="r.name" :value="r.id" />
+            </el-select>
+            <div class="period-tabs adminStatsRange">
+              <button type="button" :class="{ active: adminStatsRangeMode === 'current' }" @click="changeAdminStatsRangeMode('current')">当期</button>
+              <button type="button" :class="{ active: adminStatsRangeMode === 'past' }" @click="changeAdminStatsRangeMode('past')">往期</button>
+            </div>
             <div class="period-tabs adminStatsPeriod">
               <button type="button" :class="{ active: adminStatsPeriod === 'day' }" @click="changeAdminStatsPeriod('day')">日报</button>
               <button type="button" :class="{ active: adminStatsPeriod === 'week' }" @click="changeAdminStatsPeriod('week')">周报</button>
               <button type="button" :class="{ active: adminStatsPeriod === 'month' }" @click="changeAdminStatsPeriod('month')">月报</button>
+              <button type="button" :class="{ active: adminStatsPeriod === 'year' }" @click="changeAdminStatsPeriod('year')">年报</button>
             </div>
             <div class="stat-view-tabs">
               <button type="button" :class="{ active: statAdminView === 'usage' }" @click="switchStatAdminView('usage')">使用统计</button>
               <button type="button" :class="{ active: statAdminView === 'peak' }" @click="switchStatAdminView('peak')">高峰分析</button>
               <button type="button" :class="{ active: statAdminView === 'share' }" @click="switchStatAdminView('share')">自习室占比</button>
             </div>
-            <p class="scanner-hint">当前统计周期：{{ adminStatsReport.summary?.periodLabel || '今日' }}</p>
+            <p class="scanner-hint">当前统计：{{ adminStatsScopeLabel }} · {{ adminStatsReport.summary?.periodLabel || '今日' }} · {{ adminStatsReport.summary?.rangeWindowLabel || '' }}</p>
             <div class="admin-dashboard-grid">
-              <div class="stat-card"><div class="lbl">总预约</div><div class="num">{{ adminStatSummary.totalReserve }}</div></div>
-              <div class="stat-card"><div class="lbl">使用中</div><div class="num">{{ adminStatSummary.usingCount }}</div></div>
-              <div class="stat-card"><div class="lbl">签到率</div><div class="num">{{ adminStatSummary.checkinRate }}%</div></div>
-              <div class="stat-card"><div class="lbl">平均信用分</div><div class="num">{{ adminStatSummary.avgCredit }}</div></div>
+              <div class="stat-card"><div class="lbl">总预约</div><div class="num">{{ adminStatSummary.totalReserve }}<span class="stat-unit">次</span></div></div>
+              <div class="stat-card"><div class="lbl">使用中</div><div class="num">{{ adminStatSummary.usingCount }}<span class="stat-unit">人</span></div></div>
+              <div class="stat-card"><div class="lbl">签到率</div><div class="num">{{ adminStatSummary.checkinRate }}<span class="stat-unit">%</span></div></div>
+              <div class="stat-card"><div class="lbl">平均信用分</div><div class="num">{{ adminStatSummary.avgCredit }}<span class="stat-unit">分</span></div></div>
             </div>
             <div class="card"><div ref="usageChart" class="chart"></div></div>
           </template>
 
           <template v-if="adminPage === 'feedback'">
-            <DataTable :rows="decoratedAdminFeedback" :columns="['studentName','roomName','seatNo','type','severity','content','status']" empty-text="暂无反馈">
+            <el-input v-model="feedbackKeyword" placeholder="搜索学号、姓名、类型或反馈内容" clearable />
+            <div class="filter-row user-audit-filters">
+              <button v-for="f in feedbackStatusFilters" :key="f.key" type="button" :class="{ active: feedbackStatusFilter === f.key }" @click="feedbackStatusFilter = f.key">{{ f.label }}</button>
+            </div>
+            <DataTable :rows="pagedAdminFeedback" :columns="['studentName','roomName','seatNo','type','severity','content','status']" empty-text="暂无反馈">
               <template #actions="{ row }">
                 <el-button v-if="row._rawStatus === 'PENDING' || row._rawStatus === 'PROCESSING'" size="small" type="primary" @click="openFeedbackHandle(row)">标记处理</el-button>
                 <span v-else class="muted">已处理</span>
               </template>
             </DataTable>
+            <AdminPager v-model:page="feedbackPage" :total="feedbackTotalPages" :count="filteredAdminFeedback.length" />
           </template>
 
           <template v-if="adminPage === 'settings'">
             <div class="card">当前管理员：{{ me.name }} · {{ me.role }}</div>
             <h3>最近操作日志</h3>
-            <DataTable :rows="operationLogs" :columns="['module','action','target_type','detail','created_at']" empty-text="暂无操作日志" />
+            <el-input v-model="logKeyword" placeholder="搜索模块、操作或详情" clearable />
+            <div class="filter-row user-audit-filters">
+              <button v-for="f in logModuleFilters" :key="f.key" type="button" :class="{ active: logModuleFilter === f.key }" @click="logModuleFilter = f.key">{{ f.label }}</button>
+            </div>
+            <DataTable :rows="pagedOperationLogs" :columns="['module','action','target_type','detail','created_at']" empty-text="暂无操作日志" />
+            <AdminPager v-model:page="logPage" :total="logTotalPages" :count="filteredOperationLogs.length" />
           </template>
         </main>
+      </div>
+      <div v-if="!isDesktop" class="admin-profile-chip admin-profile-chip--mobile" aria-label="当前管理员信息">
+        <div class="admin-profile-avatar">{{ adminProfileInitial }}</div>
+        <div class="admin-profile-meta">
+          <strong>{{ me.name || me.account || '管理员' }}</strong>
+          <span>{{ adminRoleLabel }}</span>
+        </div>
       </div>
     </section>
 
@@ -566,7 +606,7 @@
       </div>
     </div>
 
-    <div v-if="genericModal.open" class="modal-mask" @click.self="genericModal.open = false">
+    <div v-if="genericModal.open" class="modal-mask modal-confirm-layer" @click.self="genericModal.open = false">
       <div class="modal-card">
         <div class="modal-head">
           <div class="modal-title">{{ genericModal.title }}</div>
@@ -576,6 +616,62 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-outline" @click="genericModal.open = false">取消</button>
           <button type="button" class="btn btn-primary" @click="runGenericConfirm">确定</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="adminFormOpen" class="modal-mask" @click.self="adminFormOpen = false">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div class="modal-title">{{ adminForm.id ? '编辑管理员' : '新增管理员' }}</div>
+          <button type="button" class="modal-close" @click="adminFormOpen = false">✕</button>
+        </div>
+        <div class="dialog-form">
+          <div class="field"><label>登录账号</label><input v-model="adminForm.account" class="input" :disabled="!!adminForm.id" placeholder="如 lib_admin01" /></div>
+          <div class="field"><label>姓名</label><input v-model="adminForm.name" class="input" placeholder="真实姓名" /></div>
+          <div class="field"><label>手机号</label><input v-model="adminForm.phone" class="input" placeholder="联系电话" /></div>
+          <div class="field">
+            <label>角色</label>
+            <p v-if="adminForm.isSuperAdmin" class="muted admin-role-fixed">超级管理员（系统内置，不可通过此界面变更）</p>
+            <p v-else class="muted admin-role-fixed">普通管理员（图书馆负责人，可分配自习室）</p>
+          </div>
+          <div class="field"><label>{{ adminForm.id ? '新密码（留空不改）' : '初始密码' }}</label><input v-model="adminForm.password" type="password" class="input" placeholder="6位以上" /></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" @click="adminFormOpen = false">取消</button>
+          <button type="button" class="btn btn-primary" @click="saveAdminAccount">保存</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="userDetailOpen" class="modal-mask" @click.self="userDetailOpen = false">
+      <div class="modal-card user-detail-modal">
+        <div class="modal-head">
+          <div class="modal-title">注册申请详情</div>
+          <button type="button" class="modal-close" @click="userDetailOpen = false">✕</button>
+        </div>
+        <div class="user-detail-grid">
+          <div><span>学号</span><strong>{{ userDetail.student_no || userDetail.username || '—' }}</strong></div>
+          <div><span>姓名</span><strong>{{ userDetail.name || '—' }}</strong></div>
+          <div><span>性别</span><strong>{{ userDetail.gender || '—' }}</strong></div>
+          <div><span>学院</span><strong>{{ userDetail.college || '—' }}</strong></div>
+          <div><span>专业</span><strong>{{ userDetail.major || '—' }}</strong></div>
+          <div><span>年级</span><strong>{{ userDetail.grade || '—' }}</strong></div>
+          <div><span>手机</span><strong>{{ userDetail.phone || '—' }}</strong></div>
+          <div><span>邮箱</span><strong>{{ userDetail.email || '—' }}</strong></div>
+          <div><span>审核状态</span><strong>{{ userDetail.auditLabel || auditStatusLabel(userDetail.audit_status) }}</strong></div>
+          <div v-if="userDetail.audit_remark"><span>审核备注</span><strong>{{ userDetail.audit_remark }}</strong></div>
+        </div>
+        <div class="field user-material-block">
+          <label>身份材料</label>
+          <img v-if="isImageMaterial(userDetail.material_url)" class="user-material-preview" :src="assetUrl(userDetail.material_url)" alt="身份材料" />
+          <a v-else-if="userDetail.material_url" class="user-material-link" :href="assetUrl(userDetail.material_url)" target="_blank" rel="noopener">点击查看上传的材料（PDF/文件）</a>
+          <p v-else class="muted">未上传身份材料</p>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" @click="userDetailOpen = false">关闭</button>
+          <button v-if="userDetail.audit_status === 'PENDING'" type="button" class="btn btn-danger" @click="rejectFromDetail">拒绝</button>
+          <button v-if="userDetail.audit_status === 'PENDING'" type="button" class="btn btn-primary" @click="approveFromDetail">通过审核</button>
         </div>
       </div>
     </div>
@@ -606,6 +702,12 @@
         <div class="modal-head">
           <div class="modal-title">💬 问题反馈</div>
           <button type="button" class="modal-close" @click="feedbackModalOpen = false">✕</button>
+        </div>
+        <div class="field">
+          <label>严重程度</label>
+          <select v-model="feedbackForm.severity" class="input">
+            <option v-for="opt in feedbackSeverityOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </select>
         </div>
         <div class="field">
           <label>反馈内容</label>
@@ -653,7 +755,83 @@
       </div>
     </div>
 
-    <div v-if="seatEditOpen" class="modal-mask" @click.self="seatEditOpen = false">
+    <div v-if="roomFormOpen" class="modal-mask modal-fullscreen">
+      <div class="modal-card modal-fullscreen-card">
+        <div class="modal-head modal-fullscreen-head">
+          <div class="modal-title">{{ roomForm.id ? '编辑自习室' : '新增自习室' }}</div>
+          <button type="button" class="modal-close" aria-label="关闭" @click="closeRoomForm">✕</button>
+        </div>
+        <p v-if="!isSuperAdmin" class="scanner-hint room-form-hint">可修改您负责的自习室信息；保存后请在下方座位控制区编辑格子属性。</p>
+        <p v-else-if="roomForm.id" class="scanner-hint room-form-hint">修改行列数并保存后将同步座位网格；点击格子可编辑座位属性。</p>
+        <p v-else class="scanner-hint room-form-hint">请填写基本信息与行列数；首次保存后将显示座位控制图。</p>
+        <div class="modal-fullscreen-body room-dialog-form">
+          <div class="room-row">
+            <div class="field"><label>编号</label><input v-model="roomForm.roomCode" class="input" placeholder="编号" :disabled="!!roomForm.id && !isSuperAdmin" /></div>
+            <div class="field"><label>名称</label><input v-model="roomForm.name" class="input" placeholder="名称" /></div>
+          </div>
+          <div class="room-row">
+            <div class="field"><label>位置</label><input v-model="roomForm.location" class="input" placeholder="位置" /></div>
+            <div class="field"><label>楼层</label><input v-model="roomForm.floor" class="input" placeholder="楼层" /></div>
+          </div>
+          <div class="room-row">
+            <div class="field"><label>开放开始</label><input v-model="roomForm.openTime" class="input" placeholder="07:00:00" /></div>
+            <div class="field"><label>开放结束</label><input v-model="roomForm.closeTime" class="input" placeholder="22:30:00" /></div>
+          </div>
+          <div class="field"><label>设施（逗号分隔）</label><input v-model="roomForm.facilities" class="input" placeholder="空调,WiFi" /></div>
+          <div class="field"><label>分布图地址</label><input v-model="roomForm.layoutImageUrl" class="input" placeholder="上传后自动填入" /></div>
+          <div class="upload-row">
+            <input type="file" accept="image/*" @change="uploadLayoutImage" />
+            <img v-if="roomForm.layoutImageUrl" class="layout-preview" :src="assetUrl(roomForm.layoutImageUrl)" alt="预览" />
+          </div>
+          <div class="room-row">
+            <div class="field"><label>行数</label><input v-model.number="roomForm.rowCount" class="input" type="number" min="1" max="20" /></div>
+            <div class="field"><label>列数</label><input v-model.number="roomForm.colCount" class="input" type="number" min="1" max="20" /></div>
+          </div>
+          <div class="field" v-if="isSuperAdmin">
+            <label>负责人（图书馆管理员）</label>
+            <el-select v-model="roomForm.managerId" placeholder="请选择负责人" style="width:100%">
+              <el-option v-for="a in managerOptions" :key="a.id" :label="`${a.name}（${a.account}）`" :value="a.id" />
+            </el-select>
+          </div>
+
+          <section class="room-seat-section">
+            <div class="room-seat-section-head">
+              <h3 class="section-title">座位控制</h3>
+              <button v-if="roomForm.id" type="button" class="btn btn-outline btn-sm" @click="addAdminSeat">补全座位</button>
+            </div>
+            <template v-if="roomForm.id">
+              <p class="scanner-hint">点击格子可编辑属性；修改行列数后请先保存自习室以同步网格。删除前请确认无进行中预约。</p>
+              <el-input v-model="seatKeyword" placeholder="搜索座位号或行列，如 A-12 / R1-C2" clearable />
+              <div class="filter-row user-audit-filters">
+                <button v-for="f in seatStatusFilters" :key="f.key" type="button" :class="{ active: seatStatusFilter === f.key }" @click="seatStatusFilter = f.key">{{ f.label }}</button>
+              </div>
+              <div class="seat-map-grid" :style="{ gridTemplateColumns: `repeat(${seatGridColCount}, minmax(0, 1fr))` }">
+                <button
+                  v-for="cell in filteredSeatGridCells"
+                  :key="cell.id ? `s-${cell.id}` : `p-${cell.row_no}-${cell.col_no}`"
+                  type="button"
+                  class="cell-grid-btn"
+                  :class="seatCellClass(cell)"
+                  @click="openSeatEdit(cell)"
+                >
+                  <div>R{{ cell.row_no }}-C{{ cell.col_no }}</div>
+                  <div class="cell-tags">
+                    <span v-for="tag in seatCellTags(cell)" :key="tag" class="cell-tag">{{ tag }}</span>
+                  </div>
+                </button>
+              </div>
+            </template>
+            <p v-else class="scanner-hint room-seat-placeholder">请先保存自习室基本信息，保存后此处将显示座位控制图。</p>
+          </section>
+        </div>
+        <div class="modal-fullscreen-footer">
+          <button type="button" class="btn btn-outline" @click="closeRoomForm">取消</button>
+          <button type="button" class="btn btn-primary btn-block" @click="saveRoom">保存自习室</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="seatEditOpen" class="modal-mask modal-seat-edit-layer" @click.self="seatEditOpen = false">
       <div class="modal-card">
         <div class="modal-head">
           <div class="modal-title">{{ seatEditForm.seat_no || '座位' }} 配置</div>
@@ -689,6 +867,25 @@
         <div class="modal-actions">
           <button type="button" class="btn btn-outline" @click="feedbackHandleOpen = false">取消</button>
           <button type="button" class="btn btn-primary" @click="submitFeedbackHandle">确认处理</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="revokeViolationOpen" class="modal-mask" @click.self="revokeViolationOpen = false">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div class="modal-title">撤销违约记录</div>
+          <button type="button" class="modal-close" @click="revokeViolationOpen = false">✕</button>
+        </div>
+        <div class="dialog-form">
+          <p class="muted">学生：{{ revokeViolationForm.studentName }} · 预约号 {{ revokeViolationForm.reservationNo }}</p>
+          <p class="muted">{{ revokeViolationForm.roomName }} · {{ revokeViolationForm.seatNo }} · {{ revokeViolationForm.reserveDate }}</p>
+          <p>撤销后将恢复该次违约扣除的信用分，并将预约标记为「已取消」。</p>
+          <div class="field"><label>撤销说明（可选）</label><textarea v-model="revokeViolationForm.remark" class="input" rows="3" placeholder="如：学生已说明情况，予以撤销"></textarea></div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-outline" @click="revokeViolationOpen = false">取消</button>
+          <button type="button" class="btn btn-primary" @click="submitRevokeViolation">确认撤销</button>
         </div>
       </div>
     </div>
@@ -778,7 +975,9 @@
 <script setup>
 import axios from 'axios'
 import * as echarts from 'echarts'
+import jsQR from 'jsqr'
 import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { createQrSvg } from './qr'
 import {
   ADMIN_COLUMN_LABELS,
   formatAdminCell,
@@ -788,7 +987,7 @@ import {
   reservationStatusText
 } from './admin-i18n'
 
-const api = axios.create({ baseURL: '/api' })
+const api = axios.create({ baseURL: '/api', timeout: 25000 })
 const token = ref(localStorage.getItem('token') || '')
 const role = ref(localStorage.getItem('role') || '')
 const authLoading = ref(false)
@@ -844,7 +1043,7 @@ const seatFilterOptions = [
   { key: 'all', label: '全部' },
   { key: 'power', label: '有电源' },
   { key: 'window', label: '靠窗' },
-  { key: 'quiet', label: '静音区' },
+  { key: 'quiet', label: '静音' },
   { key: 'hot', label: '热门' }
 ]
 const quickTimeSlots = [
@@ -853,13 +1052,21 @@ const quickTimeSlots = [
   { label: '14:00-16:00', start: '14:00', end: '16:00' },
   { label: '19:00-21:00', start: '19:00', end: '21:00' }
 ]
+const RESERVATION_PAST_GRACE_MINUTES = 15
+const CREDIT_SCORE_MAX = 500
+const feedbackSeverityOptions = [
+  { value: 'LOW', label: '低 — 一般建议' },
+  { value: 'MEDIUM', label: '中 — 影响使用' },
+  { value: 'HIGH', label: '高 — 较严重问题' },
+  { value: 'CRITICAL', label: '紧急 — 需立即处理' }
+]
 const confirmReservationOpen = ref(false)
 const checkoutModalOpen = ref(false)
 const checkoutSummary = ref({})
 const profileInfoOpen = ref(false)
 const feedbackModalOpen = ref(false)
 const feedbackForm = reactive({ type: 'SUGGESTION', severity: 'MEDIUM', content: '' })
-const roomFormExpanded = ref(false)
+const roomFormOpen = ref(false)
 const seatEditOpen = ref(false)
 const seatEditForm = reactive({})
 const seatEditEnabled = computed({
@@ -867,12 +1074,27 @@ const seatEditEnabled = computed({
   set: val => { seatEditForm.status = val ? 'NORMAL' : 'DISABLED' }
 })
 const adminStatsPeriod = ref('week')
+const adminStatsRangeMode = ref('current')
+const adminStatsRoomId = ref(null)
 const userPage = ref(1)
-const userPageSize = 3
+const userPageSize = 10
+const ADMIN_LIST_PAGE_SIZE = 10
+const adminAccountPage = ref(1)
+const reservationPage = ref(1)
+const checkinPage = ref(1)
+const liveReservationPage = ref(1)
+const feedbackPage = ref(1)
+const logPage = ref(1)
+const roomPage = ref(1)
+const announcementPage = ref(1)
 const adminAccounts = ref([])
+const adminFormOpen = ref(false)
+const adminForm = reactive({ id: null, account: '', name: '', phone: '', password: '', isSuperAdmin: false })
 const rejectRemark = ref('')
 const rejectUserId = ref(null)
 const rejectOpen = ref(false)
+const userDetailOpen = ref(false)
+const userDetail = ref({})
 const changePasswordOpen = ref(false)
 const changePasswordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' })
 const userAuditFilter = ref('')
@@ -885,13 +1107,12 @@ const userAuditFilters = [
 const genericModal = reactive({ open: false, title: '', message: '', onConfirm: null })
 const studySeconds = ref(0)
 const statAdminView = ref('usage')
-const peakStats = ref([])
+const liveReservations = ref([])
 const aboutOpen = ref(false)
 const notifyPrefs = reactive({ reservation: true, checkin: true, announcement: true, dnd: false })
 let studyTimerHandle = null
 
-const adminPage = ref('dashboard')
-const dashboard = ref({})
+const adminPage = ref('checkins')
 const users = ref([])
 const userKeyword = ref('')
 const adminReservations = ref([])
@@ -900,16 +1121,46 @@ const adminFeedback = ref([])
 const adminStatsReport = ref({ summary: {}, usage: [], peak: [], trend: [], credit: [] })
 const feedbackHandleOpen = ref(false)
 const feedbackHandleForm = reactive({ id: null, studentName: '', type: '', content: '', handleResult: '' })
-const adminSeatRoomId = ref(null)
 const adminSeats = ref([])
 const scanStudentNo = ref('')
-const adminChart = ref(null)
+const scanPhotoInput = ref(null)
+const scanHint = ref('')
+const scanBusy = ref(false)
+const checkinQrSvg = ref('')
 const usageChart = ref(null)
 const roomForm = reactive({})
 const announcementDialog = ref(false)
 const announcementForm = reactive({})
 const profileForm = reactive({ name: '', phone: '', email: '', college: '', major: '', grade: '' })
 const operationLogs = ref([])
+const adminKeyword = ref('')
+const adminStatusFilter = ref('')
+const roomKeyword = ref('')
+const roomStatusFilter = ref('')
+const seatKeyword = ref('')
+const seatStatusFilter = ref('')
+const reservationKeyword = ref('')
+const reservationStatusFilter = ref('')
+const reservationRoomFilter = ref(null)
+const checkinKeyword = ref('')
+const checkinResultFilter = ref('')
+const announcementKeyword = ref('')
+const feedbackKeyword = ref('')
+const feedbackStatusFilter = ref('')
+const logKeyword = ref('')
+const logModuleFilter = ref('')
+const revokeViolationOpen = ref(false)
+const revokeViolationForm = reactive({ id: null, studentName: '', reservationNo: '', roomName: '', seatNo: '', reserveDate: '', remark: '' })
+const adminStatusFilters = [{ key: '', label: '全部' }, { key: 'NORMAL', label: '正常' }, { key: 'DISABLED', label: '已禁用' }]
+const roomStatusFilters = [{ key: '', label: '全部' }, { key: 'OPEN', label: '开放' }, { key: 'CLOSED', label: '关闭' }, { key: 'MAINTENANCE', label: '维护中' }]
+const seatStatusFilters = [{ key: '', label: '全部' }, { key: 'NORMAL', label: '正常' }, { key: 'DAMAGED', label: '损坏' }, { key: 'DISABLED', label: '禁用' }]
+const reservationAdminStatusFilters = [
+  { key: '', label: '全部' }, { key: 'PENDING', label: '待使用' }, { key: 'USING', label: '使用中' },
+  { key: 'COMPLETED', label: '已完成' }, { key: 'CANCELLED', label: '已取消' }, { key: 'VIOLATED', label: '违约' }
+]
+const checkinResultFilters = [{ key: '', label: '全部' }, { key: 'ON_TIME', label: '准时' }, { key: 'LATE', label: '迟到' }, { key: 'INVALID', label: '无效' }]
+const feedbackStatusFilters = [{ key: '', label: '全部' }, { key: 'PENDING', label: '待处理' }, { key: 'PROCESSING', label: '处理中' }, { key: 'DONE', label: '已处理' }]
+const logModuleFilters = [{ key: '', label: '全部' }, { key: 'USER', label: '用户' }, { key: 'ROOM', label: '自习室' }, { key: 'RESERVATION', label: '预约' }, { key: 'FEEDBACK', label: '反馈' }]
 const tempLeaveHint = ref('暂离中，请在 30 分钟内返回座位')
 
 const todayText = computed(() => new Date().toLocaleDateString('zh-CN', { weekday: 'long', month: 'long', day: 'numeric' }))
@@ -917,7 +1168,40 @@ const studentNoDisplay = computed(() => me.value.student_no || me.value.username
 const homeDateText = computed(() => `${new Date().getMonth() + 1}月${new Date().getDate()}日`)
 const unreadCount = computed(() => notifications.value.filter(n => !n.read_flag).length)
 const currentRoom = computed(() => rooms.value.find(r => r.id === reservationForm.roomId))
-const adminRoom = computed(() => rooms.value.find(r => r.id === adminSeatRoomId.value))
+const seatGridRoom = computed(() => {
+  if (!roomFormOpen.value || !roomForm.id) return null
+  const r = rooms.value.find(x => Number(x.id) === Number(roomForm.id))
+  return {
+    ...r,
+    col_count: roomForm.colCount || r?.col_count || r?.colCount || 6,
+    row_count: roomForm.rowCount || r?.row_count || r?.rowCount || 4
+  }
+})
+const seatGridColCount = computed(() => Math.max(1, Number(seatGridRoom.value?.col_count || seatGridRoom.value?.colCount || roomForm.colCount || 6)))
+const seatGridRowCount = computed(() => Math.max(1, Number(seatGridRoom.value?.row_count || seatGridRoom.value?.rowCount || roomForm.rowCount || 4)))
+const seatGridCells = computed(() => {
+  const rows = seatGridRowCount.value
+  const cols = seatGridColCount.value
+  const byPos = {}
+  for (const s of adminSeats.value) {
+    byPos[`${s.row_no}-${s.col_no}`] = s
+  }
+  const cells = []
+  for (let r = 1; r <= rows; r++) {
+    for (let c = 1; c <= cols; c++) {
+      const found = byPos[`${r}-${c}`]
+      cells.push(found || {
+        row_no: r,
+        col_no: c,
+        is_seat: 1,
+        status: 'NORMAL',
+        seat_no: `R${r}-C${c}`,
+        placeholder: true
+      })
+    }
+  }
+  return cells
+})
 const todayReservation = computed(() => reservations.value.find(r => String(r.reserve_date).startsWith(reservationForm.date) && ['PENDING', 'USING'].includes(r.status)))
 const activeReservation = computed(() => reservations.value.find(r => ['PENDING', 'USING', 'TEMP_LEAVE'].includes(r.status)))
 function parseReservationDateTime(r, timeField = 'start_time') {
@@ -981,7 +1265,7 @@ const timerText = computed(() => {
   return '00:00:00'
 })
 const groupedSeats = computed(() => {
-  const order = ['精品区', '热门区', '静音区', '静音区-电源位', '标准区', '非座位区']
+  const order = ['热门区', '静音区', '开放座位', '非座位区']
   const map = {}
   for (const s of seats.value) {
     const name = resolveSeatSection(s)
@@ -994,17 +1278,55 @@ const groupedSeats = computed(() => {
     availableCount: map[name].filter(s => s.is_seat && s.available).length
   }))
 })
-const dashboardUsageRate = computed(() => {
-  const rows = dashboard.value.usage || []
-  if (!rows.length) return 0
-  const sum = rows.reduce((acc, r) => acc + Number(r.usageRate || 0), 0)
-  return (sum / rows.length).toFixed(1)
-})
 const studentTitle = computed(() => ({ home: '首页', reservation: '座位预约', checkin: '签到签退', profile: '我的', myres: '我的预约', credit: '信用积分', stats: '学习统计', notifications: '消息通知', settings: '设置', feedback: '问题反馈' }[studentPage.value] || '首页'))
 const shownReservations = computed(() => reservationStatus.value === 'ALL' ? reservations.value : reservations.value.filter(r => r.status === reservationStatus.value))
 const availableSeatCount = computed(() => seats.value.filter(s => s.available).length)
 const roomLayoutImage = computed(() => currentRoom.value?.layout_image_url || currentRoom.value?.layoutImageUrl || '')
-const endSelectStart = computed(() => addMinutes(reservationForm.startTime, 10))
+const RESERVATION_SLOT_STEP_MINUTES = 10
+/** 从自习室实体读取 HH:mm（兼容 open_time / openTime） */
+function roomTimePart(room, field, fallback) {
+  if (!room) return fallback
+  const camel = field.replace(/_([a-z])/g, (_, c) => c.toUpperCase())
+  const raw = room[field] ?? room[camel] ?? fallback
+  return String(raw).slice(0, 5)
+}
+const currentRoomOpenTime = computed(() => roomTimePart(currentRoom.value, 'open_time', '07:00'))
+const currentRoomCloseTime = computed(() => roomTimePart(currentRoom.value, 'close_time', '22:30'))
+/** 最晚开始 = 关闭时间 - 一个时段步长（如 23:30 关则可约 23:20 起） */
+const latestReservationStartTime = computed(() => {
+  const closeM = timeToMinutes(currentRoomCloseTime.value)
+  return minutesToTime(Math.max(0, closeM - RESERVATION_SLOT_STEP_MINUTES))
+})
+const endSelectStart = computed(() => addMinutes(reservationForm.startTime, RESERVATION_SLOT_STEP_MINUTES))
+const todayDateValue = computed(() => toDateValue(new Date()))
+const minStartTimeToday = computed(() => {
+  const cutoff = new Date(Date.now() - RESERVATION_PAST_GRACE_MINUTES * 60 * 1000)
+  let mins = cutoff.getHours() * 60 + cutoff.getMinutes()
+  mins = Math.ceil(mins / RESERVATION_SLOT_STEP_MINUTES) * RESERVATION_SLOT_STEP_MINUTES
+  if (mins >= 24 * 60) return latestReservationStartTime.value
+  const todayMin = minutesToTime(mins)
+  return minutesToTime(Math.max(timeToMinutes(currentRoomOpenTime.value), timeToMinutes(todayMin)))
+})
+const startTimeSelectMin = computed(() => (
+  reservationForm.date === todayDateValue.value ? minStartTimeToday.value : currentRoomOpenTime.value
+))
+const startTimeOptions = computed(() => buildReservationTimeOptions(
+  startTimeSelectMin.value, latestReservationStartTime.value, RESERVATION_SLOT_STEP_MINUTES))
+const endTimeOptions = computed(() => buildReservationTimeOptions(
+  endSelectStart.value, currentRoomCloseTime.value, RESERVATION_SLOT_STEP_MINUTES))
+const availableQuickTimeSlots = computed(() => {
+  const openM = timeToMinutes(currentRoomOpenTime.value)
+  const closeM = timeToMinutes(currentRoomCloseTime.value)
+  return quickTimeSlots.map(slot => {
+    const startM = timeToMinutes(slot.start)
+    const endM = timeToMinutes(slot.end)
+    const outOfRoom = startM < openM || endM > closeM
+    return {
+      ...slot,
+      expired: isQuickSlotExpired(slot) || outOfRoom
+    }
+  })
+})
 const dateOptions = computed(() => Array.from({ length: 7 }, (_, i) => {
   const d = new Date()
   d.setDate(d.getDate() + i)
@@ -1017,6 +1339,7 @@ const dateOptions = computed(() => Array.from({ length: 7 }, (_, i) => {
 }))
 const activeStudentTab = computed(() => ['myres', 'credit', 'stats', 'settings', 'feedback'].includes(studentPage.value) ? 'profile' : studentPage.value)
 const creditBlocked = computed(() => Number(credit.value.score ?? me.value.credit_score ?? 300) <= 0)
+const creditPercent = computed(() => Math.min(100, Math.round(Number(credit.value.score || 0) / CREDIT_SCORE_MAX * 100)))
 const creditLevel = computed(() => Number(credit.value.score || 0) >= 280 ? '优秀' : Number(credit.value.score || 0) >= 200 ? '良好' : '需改进')
 const checkinCount = computed(() => credit.value.logs?.filter(l => String(l.reason || '').includes('签到')).length || 0)
 const violationCount = computed(() => reservations.value.filter(r => ['VIOLATED', 'AUTO_CANCELLED'].includes(r.status)).length)
@@ -1057,18 +1380,80 @@ const studyAdvice = computed(() => {
 const statPeriods = [{ key: 'day', label: '日报' }, { key: 'week', label: '周报' }, { key: 'month', label: '月报' }, { key: 'year', label: '年报' }]
 const reservationTabs = [{ key: 'ALL', label: '全部' }, { key: 'PENDING', label: '待使用' }, { key: 'USING', label: '使用中' }, { key: 'COMPLETED', label: '已完成' }, { key: 'CANCELLED', label: '已取消' }]
 const studentNav = [{ page: 'home', label: '首页', icon: '🏠' }, { page: 'reservation', label: '预约', icon: '🪑' }, { page: 'checkin', label: '签到', icon: '✅' }, { page: 'profile', label: '我的', icon: '👤' }]
-const adminNav = [
-  { page: 'dashboard', label: '仪表盘', icon: '📊' },
-  { page: 'users', label: '用户管理', icon: '👥' },
-  { page: 'rooms', label: '自习室', icon: '🏫' },
-  { page: 'seats', label: '座位', icon: '🪑' },
-  { page: 'reservations', label: '预约', icon: '📅' },
-  { page: 'checkins', label: '签到', icon: '✅' },
-  { page: 'announcements', label: '公告', icon: '📣' },
-  { page: 'statistics', label: '统计', icon: '📈' },
-  { page: 'feedback', label: '反馈', icon: '💬' },
-  { page: 'settings', label: '设置', icon: '⚙️' }
-]
+const isSuperAdmin = computed(() => role.value === 'SUPER_ADMIN')
+const adminRoleLabel = computed(() => {
+  if (role.value === 'SUPER_ADMIN') return '超级管理员'
+  if (role.value === 'ADMIN') return '普通管理员'
+  return role.value || '管理员'
+})
+const adminProfileInitial = computed(() => {
+  const name = String(me.value.name || me.value.account || '管').trim()
+  return name.slice(0, 1).toUpperCase()
+})
+const adminNav = computed(() => {
+  const items = [
+    { page: 'checkins', label: '签到', icon: '✅' },
+    { page: 'users', label: '用户管理', icon: '👥' }
+  ]
+  if (isSuperAdmin.value) {
+    items.push({ page: 'admins', label: '管理员管理', icon: '🛡️' })
+  }
+  items.push(
+    { page: 'rooms', label: '自习室', icon: '🏫' },
+    { page: 'reservations', label: '预约', icon: '📅' },
+    { page: 'announcements', label: '公告', icon: '📣' },
+    { page: 'statistics', label: '统计', icon: '📈' },
+    { page: 'feedback', label: '反馈', icon: '💬' },
+    { page: 'settings', label: '设置', icon: '⚙️' }
+  )
+  return items
+})
+const adminAccountColumns = ['account', 'name', 'roleLabel', 'phone', 'managedRooms', 'statusLabel']
+const managerOptions = computed(() => adminAccounts.value.filter(a => a.role === 'ADMIN' && a.status !== 'DISABLED'))
+const decoratedAdminAccounts = computed(() => adminAccounts.value.map(row => ({
+  ...row,
+  roleLabel: row.role === 'SUPER_ADMIN' ? '超级管理员' : '普通管理员',
+  statusLabel: row.status === 'DISABLED' ? '已禁用' : '正常',
+  managedRooms: row.managedRooms || '—'
+})))
+function paginateRows(rows, page, pageSize = ADMIN_LIST_PAGE_SIZE) {
+  const total = pagerTotal(rows.length, pageSize)
+  const safePage = Math.min(Math.max(1, page), total)
+  const start = (safePage - 1) * pageSize
+  return rows.slice(start, start + pageSize)
+}
+function pagerTotal(count, pageSize = ADMIN_LIST_PAGE_SIZE) {
+  return Math.max(1, Math.ceil(Math.max(0, count) / pageSize))
+}
+function matchAdminKeyword(row, keyword, fields) {
+  const q = String(keyword || '').trim().toLowerCase()
+  if (!q) return true
+  return fields.some(f => String(row[f] ?? '').toLowerCase().includes(q))
+}
+const filteredAdminAccounts = computed(() => {
+  let rows = decoratedAdminAccounts.value
+  if (adminStatusFilter.value) rows = rows.filter(r => r.status === adminStatusFilter.value)
+  return rows.filter(r => matchAdminKeyword(r, adminKeyword.value, ['account', 'name', 'phone', 'managedRooms']))
+})
+const pagedAdminAccounts = computed(() => paginateRows(filteredAdminAccounts.value, adminAccountPage.value))
+const adminAccountTotalPages = computed(() => pagerTotal(filteredAdminAccounts.value.length))
+const filteredRooms = computed(() => {
+  let rows = rooms.value
+  if (roomStatusFilter.value) rows = rows.filter(r => r.status === roomStatusFilter.value)
+  return rows.filter(r => matchAdminKeyword(r, roomKeyword.value, ['name', 'location', 'floor', 'room_code']))
+})
+const pagedRooms = computed(() => paginateRows(filteredRooms.value, roomPage.value))
+const roomTotalPages = computed(() => pagerTotal(filteredRooms.value.length))
+const filteredSeatGridCells = computed(() => {
+  let cells = seatGridCells.value
+  if (seatStatusFilter.value) cells = cells.filter(c => String(c.status || 'NORMAL') === seatStatusFilter.value)
+  const q = String(seatKeyword.value || '').trim().toLowerCase()
+  if (!q) return cells
+  return cells.filter(c => {
+    const label = `R${c.row_no}-C${c.col_no} ${c.seat_no || ''}`.toLowerCase()
+    return label.includes(q)
+  })
+})
 const sortedAnnouncements = computed(() => [...announcements.value].sort((a, b) => Number(b.pinned || 0) - Number(a.pinned || 0)))
 const pagedUsers = computed(() => {
   const start = (userPage.value - 1) * userPageSize
@@ -1076,33 +1461,74 @@ const pagedUsers = computed(() => {
 })
 const userTotalPages = computed(() => Math.max(1, Math.ceil(users.value.length / userPageSize)))
 const decoratedLiveReservations = computed(() =>
-  (dashboard.value.liveReservations || []).map(r => ({
+  (liveReservations.value || []).map(r => ({
     ...r,
     reserveDate: formatDate(r.reserveDate || r.reserve_date),
     status: reservationStatusText(r.status)
   }))
 )
-const decoratedAdminReservations = computed(() => adminReservations.value.map(decorateReservationRow))
-const decoratedCheckins = computed(() => checkins.value.map(decorateCheckinRow))
+const decoratedAdminReservations = computed(() => adminReservations.value.map(r => ({
+  ...decorateReservationRow(r),
+  _rawStatus: r.status,
+  _rawId: r.id,
+  cancel_reason: r.cancel_reason || '—'
+})))
+const filteredAdminReservations = computed(() => {
+  let rows = decoratedAdminReservations.value
+  if (reservationStatusFilter.value) rows = rows.filter(r => r._rawStatus === reservationStatusFilter.value)
+  if (reservationRoomFilter.value) rows = rows.filter(r => Number(r.room_id) === Number(reservationRoomFilter.value))
+  return rows.filter(r => matchAdminKeyword(r, reservationKeyword.value, [
+    'student_no', 'studentNo', 'studentName', 'roomName', 'seatNo', 'reservation_no'
+  ]))
+})
+const pagedAdminReservations = computed(() => paginateRows(filteredAdminReservations.value, reservationPage.value))
+const reservationTotalPages = computed(() => pagerTotal(filteredAdminReservations.value.length))
+const decoratedCheckins = computed(() => checkins.value.map(r => ({ ...decorateCheckinRow(r), _rawResult: r.result })))
+const filteredCheckins = computed(() => {
+  let rows = decoratedCheckins.value
+  if (checkinResultFilter.value) rows = rows.filter(r => r._rawResult === checkinResultFilter.value)
+  return rows.filter(r => matchAdminKeyword(r, checkinKeyword.value, ['studentNo', 'studentName', 'roomName', 'seatNo']))
+})
+const pagedCheckins = computed(() => paginateRows(filteredCheckins.value, checkinPage.value))
+const checkinTotalPages = computed(() => pagerTotal(filteredCheckins.value.length))
+const pagedLiveReservations = computed(() => paginateRows(decoratedLiveReservations.value, liveReservationPage.value))
+const liveReservationTotalPages = computed(() => pagerTotal(decoratedLiveReservations.value.length))
+const filteredAnnouncements = computed(() => sortedAnnouncements.value.filter(a =>
+  matchAdminKeyword(a, announcementKeyword.value, ['title', 'content'])
+))
+const pagedAnnouncements = computed(() => paginateRows(filteredAnnouncements.value, announcementPage.value))
+const announcementTotalPages = computed(() => pagerTotal(filteredAnnouncements.value.length))
 const decoratedAdminFeedback = computed(() => adminFeedback.value.map(row => {
   const d = decorateFeedbackRow(row)
   return { ...d, _rawStatus: row.status }
 }))
+const filteredAdminFeedback = computed(() => {
+  let rows = decoratedAdminFeedback.value
+  if (feedbackStatusFilter.value) rows = rows.filter(r => r._rawStatus === feedbackStatusFilter.value)
+  return rows.filter(r => matchAdminKeyword(r, feedbackKeyword.value, ['studentName', 'studentNo', 'type', 'content', 'roomName']))
+})
+const pagedAdminFeedback = computed(() => paginateRows(filteredAdminFeedback.value, feedbackPage.value))
+const feedbackTotalPages = computed(() => pagerTotal(filteredAdminFeedback.value.length))
+const filteredOperationLogs = computed(() => {
+  let rows = operationLogs.value
+  if (logModuleFilter.value) rows = rows.filter(r => String(r.module || '') === logModuleFilter.value)
+  return rows.filter(r => matchAdminKeyword(r, logKeyword.value, ['module', 'action', 'target_type', 'detail', 'operator_name']))
+})
+const pagedOperationLogs = computed(() => paginateRows(filteredOperationLogs.value, logPage.value))
+const logTotalPages = computed(() => pagerTotal(filteredOperationLogs.value.length))
 const adminStatSummary = computed(() => {
   const s = adminStatsReport.value.summary || {}
-  if (s.totalReserve != null) {
-    return {
-      totalReserve: s.totalReserve || 0,
-      usingCount: s.usingCount || 0,
-      checkinRate: s.checkinRate || 0,
-      avgCredit: s.avgCredit || 0
-    }
+  return {
+    totalReserve: s.totalReserve || 0,
+    usingCount: s.usingCount || 0,
+    checkinRate: s.checkinRate || 0,
+    avgCredit: s.avgCredit || 0
   }
-  const usage = dashboard.value.usage || []
-  const totalReserve = usage.reduce((acc, row) => acc + Number(row.reservationCount || 0), 0)
-  const usedCount = usage.reduce((acc, row) => acc + Number(row.usedCount || 0), 0)
-  const checkinRate = totalReserve ? Math.round((usedCount / totalReserve) * 100) : 0
-  return { totalReserve, usingCount: dashboard.value.usingCount || 0, checkinRate, avgCredit: 0 }
+})
+const adminStatsScopeLabel = computed(() => {
+  if (!adminStatsRoomId.value) return '全部自习室'
+  const room = rooms.value.find(r => Number(r.id) === Number(adminStatsRoomId.value))
+  return room?.name || '指定自习室'
 })
 const reservationDurationText = computed(() => {
   if (!reservationForm.startTime || !reservationForm.endTime) return ''
@@ -1120,6 +1546,95 @@ function assetUrl(path) {
   if (!path) return ''
   if (String(path).startsWith('http')) return path
   return String(path).startsWith('/') ? path : `/${path}`
+}
+function isImageMaterial(url) {
+  return /\.(jpg|jpeg|png|gif|webp|bmp)(\?.*)?$/i.test(String(url || ''))
+}
+function statCount(row) {
+  return Number(row?.cnt ?? row?.count ?? 0)
+}
+/** ECharts 坐标轴：次数类指标 */
+function countYAxis(name = '预约次数（次）') {
+  return {
+    type: 'value',
+    name,
+    nameTextStyle: { fontSize: 12, color: '#667085' },
+    axisLabel: { formatter: (v) => `${v} 次` }
+  }
+}
+/** ECharts 坐标轴：百分比类指标 */
+function percentYAxis(name = '使用率（%）') {
+  return {
+    type: 'value',
+    name,
+    nameTextStyle: { fontSize: 12, color: '#667085' },
+    axisLabel: { formatter: (v) => `${v}%` }
+  }
+}
+/** ECharts 坐标轴：学习时长（小时） */
+function hourYAxis(name = '学习时长（小时）') {
+  return {
+    type: 'value',
+    name,
+    nameTextStyle: { fontSize: 12, color: '#667085' },
+    axisLabel: { formatter: (v) => `${v} h` }
+  }
+}
+function countTooltip() {
+  return { trigger: 'axis', valueFormatter: (v) => `${v} 次` }
+}
+function hourTooltip() {
+  return { trigger: 'axis', valueFormatter: (v) => `${v} 小时` }
+}
+function trendAxisLabel(row) {
+  if (row?.peakHour != null && row.peakHour !== '') {
+    return `${String(row.peakHour).padStart(2, '0')}:00`
+  }
+  if (row?.monthNum != null && row.monthNum !== '') {
+    return `${row.monthNum}月`
+  }
+  return row?.timeLabel ?? row?.label ?? ''
+}
+function peakAxisLabel(row) {
+  const h = row?.peakHour ?? row?.hour
+  return h != null && h !== '' ? `${h}时` : ''
+}
+function isQuickSlotExpired(slot) {
+  if (reservationForm.date !== todayDateValue.value) return false
+  const cutoff = Date.now() - RESERVATION_PAST_GRACE_MINUTES * 60 * 1000
+  const [h, m] = slot.start.split(':').map(Number)
+  const slotStart = new Date()
+  slotStart.setHours(h, m, 0, 0)
+  return slotStart.getTime() < cutoff
+}
+function clampReservationStartForToday() {
+  if (reservationForm.date !== todayDateValue.value) {
+    normalizeReservationTimes()
+    return
+  }
+  if (timeToMinutes(reservationForm.startTime) < timeToMinutes(minStartTimeToday.value)) {
+    reservationForm.startTime = minStartTimeToday.value
+    if (timeToMinutes(reservationForm.endTime) <= timeToMinutes(reservationForm.startTime)) {
+      reservationForm.endTime = addMinutes(reservationForm.startTime, 120)
+    }
+  }
+  normalizeReservationTimes()
+}
+function ensureReservationTimeAllowed() {
+  if (timeToMinutes(reservationForm.startTime) < timeToMinutes(currentRoomOpenTime.value)) {
+    throw new Error(`开始时间不能早于自习室开放时间 ${currentRoomOpenTime.value}`)
+  }
+  if (timeToMinutes(reservationForm.endTime) > timeToMinutes(currentRoomCloseTime.value)) {
+    throw new Error(`结束时间不能晚于自习室关闭时间 ${currentRoomCloseTime.value}`)
+  }
+  if (reservationForm.date !== todayDateValue.value) return
+  const cutoff = Date.now() - RESERVATION_PAST_GRACE_MINUTES * 60 * 1000
+  const [h, m] = reservationForm.startTime.split(':').map(Number)
+  const start = new Date()
+  start.setHours(h, m, 0, 0)
+  if (start.getTime() < cutoff) {
+    throw new Error('不能预约已开始超过15分钟的时段，请选择更晚的开始时间')
+  }
 }
 function roomStatusText(status) {
   return { OPEN: '开放', CLOSED: '关闭', MAINTENANCE: '维护中' }[status] || status || '-'
@@ -1165,6 +1680,7 @@ function parseRoomFacilities(room) {
   return String(raw).split(',').map(x => x.trim()).filter(Boolean)
 }
 function seatCellClass(seat) {
+  if (seat?.placeholder) return 'placeholder'
   if (!seat?.is_seat) return 'nonseat'
   if (seat.has_power) return 'power'
   return ''
@@ -1179,14 +1695,20 @@ function seatCellTags(seat) {
   if (!seat?.is_seat) tags.push('非座位')
   return tags.length ? tags : ['普通']
 }
-function toggleRoomForm() {
-  if (roomFormExpanded.value && !roomForm.id) {
-    roomFormExpanded.value = false
-    return
-  }
+function openRoomFormCreate() {
   editRoom()
 }
+function closeRoomForm() {
+  roomFormOpen.value = false
+  adminSeats.value = []
+  seatKeyword.value = ''
+  seatStatusFilter.value = ''
+}
 function openSeatEdit(seat) {
+  if (!seat?.id) {
+    notify('该格子暂无座位数据，请先在「自习室管理」保存行列数以同步网格')
+    return
+  }
   Object.assign(seatEditForm, {
     id: seat.id,
     seat_no: seat.seat_no,
@@ -1248,6 +1770,18 @@ async function changeAdminStatsPeriod(period) {
   adminStatsPeriod.value = period
   await loadAdminStatistics()
 }
+async function changeAdminStatsRangeMode(mode) {
+  adminStatsRangeMode.value = mode
+  await loadAdminStatistics()
+}
+async function loadLiveReservations() {
+  try {
+    liveReservations.value = await call('get', '/admin/live-reservations')
+  } catch (e) {
+    liveReservations.value = []
+    notify(e.message)
+  }
+}
 function toDateValue(date) {
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
@@ -1286,6 +1820,9 @@ function ensureEndAfterStart() {
   if (!reservationForm.endTime || timeToMinutes(reservationForm.endTime) <= timeToMinutes(reservationForm.startTime)) {
     reservationForm.endTime = endSelectStart.value
   }
+  if (timeToMinutes(reservationForm.endTime) > timeToMinutes(currentRoomCloseTime.value)) {
+    reservationForm.endTime = currentRoomCloseTime.value
+  }
 }
 function formatStudyTime(sec) {
   const h = String(Math.floor(sec / 3600)).padStart(2, '0')
@@ -1302,13 +1839,35 @@ function updateStudyTimer() {
   const start = new Date(String(r.sign_in_time).replace(' ', 'T'))
   studySeconds.value = Math.max(0, Math.floor((Date.now() - start.getTime()) / 1000))
 }
+/** 学生端分区：仅保留热门/静音/开放座位，静音单独成区，不再使用精品区、标准区或复合标签 */
 function resolveSeatSection(seat) {
   if (!seat.is_seat) return '非座位区'
-  if (seat.quiet_zone && seat.has_power) return '静音区-电源位'
   if (seat.quiet_zone) return '静音区'
-  if (seat.has_power || seat.near_window) return '精品区'
   if (seat.hot_seat) return '热门区'
-  return '标准区'
+  return '开放座位'
+}
+function buildReservationTimeOptions(rangeStart, rangeEnd, stepMin = 10) {
+  const options = []
+  let cur = timeToMinutes(rangeStart)
+  const max = timeToMinutes(rangeEnd)
+  while (cur <= max) {
+    options.push(minutesToTime(cur))
+    cur += stepMin
+  }
+  return options
+}
+function normalizeReservationTimes() {
+  const starts = startTimeOptions.value
+  if (starts.length && !starts.includes(reservationForm.startTime)) {
+    reservationForm.startTime = starts[0]
+  }
+  if (!reservationForm.endTime || timeToMinutes(reservationForm.endTime) <= timeToMinutes(reservationForm.startTime)) {
+    reservationForm.endTime = endSelectStart.value
+  }
+  const ends = endTimeOptions.value
+  if (ends.length && !ends.includes(reservationForm.endTime)) {
+    reservationForm.endTime = ends.includes(endSelectStart.value) ? endSelectStart.value : ends[0]
+  }
 }
 function matchesSeatFilter(seat) {
   if (seatFilter.value === 'all') return true
@@ -1330,6 +1889,10 @@ function canSelectSeat(seat) {
   return !!seat.is_seat && !!seat.available && matchesSeatFilter(seat)
 }
 function applyQuickSlot(slot) {
+  if (slot.expired || isQuickSlotExpired(slot)) {
+    notify('该时段已开始超过15分钟，无法预约')
+    return
+  }
   reservationForm.startTime = slot.start
   reservationForm.endTime = slot.end
   loadAvailableSeats()
@@ -1393,7 +1956,7 @@ function clearSession(message) {
   role.value = ''
   me.value = {}
   studentPage.value = 'home'
-  adminPage.value = 'dashboard'
+  adminPage.value = 'checkins'
   loginRole.value = 'student'
   localStorage.removeItem('token')
   localStorage.removeItem('role')
@@ -1523,7 +2086,7 @@ async function bootstrap(silent = true) {
     if (role.value === 'STUDENT') {
       await Promise.all([loadReservations(), loadNotifications(), loadCredit(), loadStudyStats()])
     } else {
-      await openAdmin('dashboard')
+      await openAdmin('checkins')
     }
   } catch (e) {
     clearSession('')
@@ -1535,29 +2098,38 @@ async function bootstrap(silent = true) {
 async function loadRooms() {
   rooms.value = await call('get', role.value === 'STUDENT' ? '/rooms' : '/admin/rooms')
   if (!reservationForm.roomId && rooms.value[0]) reservationForm.roomId = rooms.value[0].id
-  if (!adminSeatRoomId.value && rooms.value[0]) adminSeatRoomId.value = rooms.value[0].id
   await loadAvailableSeats()
 }
 async function loadAvailableSeats() {
   if (!reservationForm.roomId) return
+  normalizeReservationTimes()
   ensureEndAfterStart()
   seats.value = await call('get', '/seats/available', null, { params: { roomId: reservationForm.roomId, date: reservationForm.date, startTime: reservationForm.startTime, endTime: reservationForm.endTime } })
   selectedSeat.value = null
 }
+async function handleRoomChange() {
+  normalizeReservationTimes()
+  clampReservationStartForToday()
+  await loadAvailableSeats()
+}
 async function setReservationDate(date) {
   reservationForm.date = date
+  clampReservationStartForToday()
   await loadAvailableSeats()
 }
 function selectRoom(id) {
   reservationForm.roomId = id
   studentPage.value = 'reservation'
-  loadAvailableSeats()
+  handleRoomChange()
 }
 async function handleStartTimeChange() {
+  normalizeReservationTimes()
   ensureEndAfterStart()
+  clampReservationStartForToday()
   await loadAvailableSeats()
 }
 async function handleEndTimeChange() {
+  normalizeReservationTimes()
   if (timeToMinutes(reservationForm.endTime) <= timeToMinutes(reservationForm.startTime)) {
     reservationForm.endTime = endSelectStart.value
     notify('结束时间必须晚于开始时间')
@@ -1580,6 +2152,7 @@ function seatUnavailableText(seat) {
 async function createReservation() {
   try {
     ensureEndAfterStart()
+    ensureReservationTimeAllowed()
     await call('post', '/reservations', { roomId: reservationForm.roomId, seatId: selectedSeat.value.id, reserveDate: reservationForm.date, startTime: reservationForm.startTime, endTime: reservationForm.endTime })
     confirmReservationOpen.value = false
     notify('预约成功')
@@ -1592,8 +2165,8 @@ async function loadReservations() {
 }
 async function cancelReservation(r) {
   await call('post', `/reservations/${r.id}/cancel`)
-  notify('已取消预约')
-  await loadReservations()
+          notify('已取消预约，扣除 50 信用分')
+  await Promise.all([loadReservations(), loadCredit()])
 }
 async function checkout() {
   confirmCheckout()
@@ -1674,8 +2247,11 @@ async function readAllNotifications() {
   await call('post', '/notifications/read-all')
   await loadNotifications()
 }
-async function submitFeedback(content) {
-  await call('post', '/feedback', { content, type: 'SUGGESTION', severity: 'MEDIUM', roomId: reservationForm.roomId, seatId: selectedSeat.value?.id })
+async function submitFeedback(payload) {
+  const content = typeof payload === 'string' ? payload : payload?.content
+  const severity = typeof payload === 'object' && payload?.severity ? payload.severity : 'MEDIUM'
+  if (!String(content || '').trim()) return
+  await call('post', '/feedback', { content, type: 'SUGGESTION', severity, roomId: reservationForm.roomId, seatId: selectedSeat.value?.id })
   notify('反馈已提交')
   studentPage.value = 'profile'
 }
@@ -1688,27 +2264,86 @@ function statusText(status) {
 }
 async function openAdmin(page) {
   adminPage.value = page
-  if (page === 'dashboard') {
-    dashboard.value = await call('get', '/admin/dashboard')
-    peakStats.value = dashboard.value.peak || []
-    await nextTick()
-    drawAdminChart()
-  }
   if (page === 'users') await loadUsers()
-  if (page === 'rooms') await loadRooms()
-  if (page === 'seats') await loadAdminSeats()
+  if (page === 'admins') await loadAdminAccounts()
+  if (page === 'rooms') {
+    await loadRooms()
+    if (isSuperAdmin.value) await loadAdminAccounts()
+  }
   if (page === 'reservations') adminReservations.value = await call('get', '/admin/reservations')
   if (page === 'checkins') {
     checkins.value = await call('get', '/admin/checkins')
     scanStudentNo.value = ''
+    scanHint.value = ''
+    await loadLiveReservations()
   }
   if (page === 'announcements') await loadAnnouncements()
-  if (page === 'statistics') await loadAdminStatistics()
+  if (page === 'statistics') {
+    await loadRooms()
+    await loadAdminStatistics()
+  }
   if (page === 'feedback') adminFeedback.value = await call('get', '/admin/feedback')
   if (page === 'settings') {
     operationLogs.value = await call('get', '/admin/operation-logs')
-    if (role.value === 'SUPER_ADMIN') adminAccounts.value = await call('get', '/admin/admins')
+    if (isSuperAdmin.value) await loadAdminAccounts()
   }
+}
+async function loadAdminAccounts() {
+  try {
+    adminAccounts.value = await call('get', '/admin/admins')
+  } catch (e) {
+    adminAccounts.value = []
+    if (isSuperAdmin.value) notify(e.message)
+  }
+}
+function openAdminForm(row = null) {
+  if (!isSuperAdmin.value) return notify('仅超级管理员可管理管理员账号')
+  Object.assign(adminForm, {
+    id: row?.id || null,
+    account: row?.account || '',
+    name: row?.name || '',
+    phone: row?.phone || '',
+    password: '',
+    isSuperAdmin: row?.role === 'SUPER_ADMIN'
+  })
+  adminFormOpen.value = true
+}
+async function saveAdminAccount() {
+  if (!adminForm.account.trim() || !adminForm.name.trim()) return notify('请填写账号与姓名')
+  if (!adminForm.id && (!adminForm.password || adminForm.password.length < 6)) return notify('请设置至少6位初始密码')
+  try {
+    if (adminForm.id) {
+      await call('put', `/admin/admins/${adminForm.id}`, {
+        name: adminForm.name.trim(),
+        phone: adminForm.phone.trim(),
+        password: adminForm.password || undefined
+      })
+    } else {
+      await call('post', '/admin/admins', {
+        account: adminForm.account.trim(),
+        name: adminForm.name.trim(),
+        phone: adminForm.phone.trim(),
+        password: adminForm.password
+      })
+    }
+    adminFormOpen.value = false
+    notify('管理员已保存')
+    await loadAdminAccounts()
+  } catch (e) { notify(e.message) }
+}
+async function disableAdminAccount(row) {
+  try {
+    await call('post', `/admin/admins/${row.id}/disable`)
+    notify('已禁用')
+    await loadAdminAccounts()
+  } catch (e) { notify(e.message) }
+}
+async function enableAdminAccount(row) {
+  try {
+    await call('post', `/admin/admins/${row.id}/enable`)
+    notify('已启用')
+    await loadAdminAccounts()
+  } catch (e) { notify(e.message) }
 }
 function resolveUserId(rowOrId) {
   if (rowOrId && typeof rowOrId === 'object') {
@@ -1735,6 +2370,34 @@ async function loadUsers() {
   if (userAuditFilter.value) params.auditStatus = userAuditFilter.value
   users.value = (await call('get', '/admin/users', null, { params })).map(decorateUserRow)
   userPage.value = 1
+}
+function exportUsersCsv() {
+  api.get('/admin/users/export', {
+    responseType: 'blob',
+    params: {
+      keyword: userKeyword.value || undefined,
+      auditStatus: userAuditFilter.value || undefined
+    }
+  }).then(res => {
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'student-users.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+    notify('用户 CSV 已导出')
+  }).catch(e => notify(e.message || '导出失败'))
+}
+function openUserDetail(row) {
+  userDetail.value = { ...row }
+  userDetailOpen.value = true
+}
+function approveFromDetail() {
+  approve(userDetail.value).then(() => { userDetailOpen.value = false })
+}
+function rejectFromDetail() {
+  reject(userDetail.value)
+  userDetailOpen.value = false
 }
 async function approve(row) {
   const id = resolveUserId(row)
@@ -1821,17 +2484,26 @@ function editRoom(r = {}) {
     rowCount: r.row_count || 4,
     colCount: r.col_count || 6,
     status: r.status || 'OPEN',
-    facilities: r.facilities || '空调,WiFi'
+    facilities: r.facilities || '空调,WiFi',
+    managerId: r.manager_id || r.managerId || null
   })
-  roomFormExpanded.value = true
+  seatKeyword.value = ''
+  seatStatusFilter.value = ''
+  roomFormOpen.value = true
+  if (r.id) {
+    nextTick(() => loadAdminSeats())
+  } else {
+    adminSeats.value = []
+  }
 }
 async function saveRoom() {
   if (!roomForm.name?.trim()) return notify('请填写自习室名称')
   if (!roomForm.location?.trim()) return notify('请填写自习室位置')
+  if (isSuperAdmin.value && !roomForm.id && !roomForm.managerId) return notify('请选择自习室负责人')
   const method = roomForm.id ? 'put' : 'post'
   const url = roomForm.id ? `/admin/rooms/${roomForm.id}` : '/admin/rooms'
   try {
-    await call(method, url, {
+    const payload = {
       roomCode: roomForm.roomCode || `ROOM-${Date.now()}`,
       name: roomForm.name.trim(),
       location: roomForm.location.trim(),
@@ -1843,10 +2515,17 @@ async function saveRoom() {
       rowCount: roomForm.rowCount || 4,
       colCount: roomForm.colCount || 6,
       status: roomForm.status || 'OPEN'
-    })
-    roomFormExpanded.value = false
-    notify('自习室已保存')
+    }
+    if (isSuperAdmin.value && roomForm.managerId) payload.managerId = roomForm.managerId
+    const isCreate = !roomForm.id
+    const saved = await call(method, url, payload)
+    if (saved?.id) roomForm.id = saved.id
+    notify(isCreate ? '自习室已创建，可在下方编辑座位' : '自习室已保存，座位网格已同步，可继续在下方编辑座位')
     await loadRooms()
+    await loadAdminSeats()
+    if (reservationForm.roomId && Number(reservationForm.roomId) === Number(roomForm.id)) {
+      await loadAvailableSeats()
+    }
   } catch (e) { notify(e.message || '保存失败') }
 }
 async function deleteRoom(r) {
@@ -1857,25 +2536,179 @@ async function deleteRoom(r) {
   } catch (e) { notify(e.message) }
 }
 async function loadAdminSeats() {
-  if (!adminSeatRoomId.value) return
-  adminSeats.value = await call('get', `/admin/rooms/${adminSeatRoomId.value}/seats`)
+  if (!roomFormOpen.value || !roomForm.id) {
+    adminSeats.value = []
+    return
+  }
+  adminSeats.value = await call('get', `/admin/rooms/${roomForm.id}/seats`)
 }
 async function toggleSeat(s) {
   await call('put', `/admin/seats/${s.id}`, { ...s, isSeat: s.is_seat, cellCategory: s.cell_category, seatType: s.seat_type, hasPower: s.has_power, nearWindow: s.near_window, quietZone: s.quiet_zone, hotSeat: s.hot_seat, status: s.status === 'NORMAL' ? 'DISABLED' : 'NORMAL' })
   await loadAdminSeats()
 }
 async function scanCheckin() {
+  if (scanBusy.value) return
   const studentNo = scanStudentNo.value.trim()
   if (!studentNo) {
     notify('请输入学生学号')
     return
   }
+  scanBusy.value = true
+  scanHint.value = `正在提交签到（学号 ${studentNo}）…`
   try {
     await call('post', '/admin/checkin/scan', { studentNo })
     notify('签到成功')
     scanStudentNo.value = ''
-    checkins.value = await call('get', '/admin/checkins')
-  } catch (e) { notify(e.message) }
+    scanHint.value = '签到成功。可继续输入学号或拍照扫码下一位学生。'
+    try {
+      checkins.value = await call('get', '/admin/checkins')
+      await loadLiveReservations()
+    } catch {
+      /* 列表刷新失败不影响签到结果 */
+    }
+  } catch (e) {
+    scanHint.value = e.message || '签到失败，请重试或检查网络'
+    notify(e.message || '签到失败')
+  } finally {
+    scanBusy.value = false
+  }
+}
+/** 从拍照/二维码文本解析学号（支持纯学号或旧版 token 二维码） */
+function normalizeStudentNoFromScan(raw) {
+  const text = String(raw || '').trim()
+  if (/^\d{10,20}$/.test(text)) return text
+  try {
+    let b64 = text.replace(/-/g, '+').replace(/_/g, '/')
+    while (b64.length % 4) b64 += '='
+    const decoded = atob(b64)
+    const parts = decoded.split(':')
+    if (parts.length >= 4 && /^\d{10,20}$/.test(parts[3])) return parts[3]
+  } catch { /* 非 token */ }
+  return ''
+}
+function triggerPhotoScan() {
+  if (scanBusy.value) return
+  scanPhotoInput.value?.click()
+}
+function loadImageFromUrl(url) {
+  return new Promise((resolve, reject) => {
+    const el = new Image()
+    el.onload = () => resolve(el)
+    el.onerror = () => reject(new Error('无法读取照片'))
+    el.src = url
+  })
+}
+function buildScanCanvas(img, maxSide) {
+  let w = img.naturalWidth || img.width
+  let h = img.naturalHeight || img.height
+  if (!w || !h) return null
+  if (Math.max(w, h) > maxSide) {
+    const ratio = maxSide / Math.max(w, h)
+    w = Math.max(1, Math.round(w * ratio))
+    h = Math.max(1, Math.round(h * ratio))
+  }
+  const canvas = document.createElement('canvas')
+  canvas.width = w
+  canvas.height = h
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return null
+  ctx.drawImage(img, 0, 0, w, h)
+  return canvas
+}
+function decodeJsQrFromCanvas(canvas) {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })
+  if (!ctx) return ''
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+  const result = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'attemptBoth' })
+  return result?.data?.trim() || ''
+}
+async function tryBarcodeDetectorOnCanvas(canvas) {
+  if (!('BarcodeDetector' in window)) return ''
+  try {
+    const detector = new window.BarcodeDetector({ formats: ['qr_code'] })
+    const codes = await Promise.race([
+      detector.detect(canvas),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1200))
+    ])
+    return codes[0]?.rawValue?.trim() || ''
+  } catch {
+    return ''
+  }
+}
+async function decodeQrFromImageFile(file) {
+  const name = file.name || ''
+  const type = file.type || ''
+  if (/heic|heif/i.test(type) || /\.heic$|\.heif$/i.test(name)) {
+    throw new Error('HEIC 照片浏览器无法解析，请点「拍照」现拍 JPG，或直接输入学号')
+  }
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await loadImageFromUrl(url)
+    const sizes = [960, 1280, 640]
+    for (const size of sizes) {
+      const canvas = buildScanCanvas(img, size)
+      if (!canvas) continue
+      const fromJs = decodeJsQrFromCanvas(canvas)
+      if (fromJs) return fromJs
+    }
+    const fallbackCanvas = buildScanCanvas(img, 960)
+    if (fallbackCanvas) {
+      const fromNative = await tryBarcodeDetectorOnCanvas(fallbackCanvas)
+      if (fromNative) return fromNative
+    }
+    return ''
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+async function onScanPhotoSelected(ev) {
+  const file = ev.target?.files?.[0]
+  if (ev.target) ev.target.value = ''
+  if (!file || scanBusy.value) return
+  scanBusy.value = true
+  scanHint.value = '正在识别照片（已自动压缩，请稍候）…'
+  try {
+    const raw = await decodeQrFromImageFile(file)
+    if (!raw) {
+      scanHint.value = '未识别到二维码（与手机好坏无关，常因拍屏摩尔纹/相册 HEIC）。请直接输入学号，或让学生把二维码放大、斜 30° 再拍。'
+      notify(scanHint.value)
+      return
+    }
+    const studentNo = normalizeStudentNoFromScan(raw)
+    if (!/^\d{10,20}$/.test(studentNo)) {
+      scanHint.value = '识别内容不是有效学号，请让学生出示签到页的学号二维码，或手动输入学号。'
+      notify(scanHint.value)
+      return
+    }
+    scanStudentNo.value = studentNo
+    scanHint.value = `已识别学号 ${studentNo}，正在提交签到…`
+    await call('post', '/admin/checkin/scan', { studentNo })
+    notify('签到成功')
+    scanStudentNo.value = ''
+    scanHint.value = '签到成功。可继续输入学号或拍照扫码下一位学生。'
+    try {
+      checkins.value = await call('get', '/admin/checkins')
+      await loadLiveReservations()
+    } catch { /* ignore */ }
+  } catch (e) {
+    const msg = e.message || '照片解析或签到失败'
+    scanHint.value = msg.includes('timeout') ? '请求超时，请确认与电脑同一 WiFi 后重试' : msg
+    notify(scanHint.value)
+  } finally {
+    scanBusy.value = false
+  }
+}
+async function refreshCheckinQr() {
+  const no = studentNoDisplay.value
+  if (!no || no === '—') {
+    checkinQrSvg.value = ''
+    return
+  }
+  try {
+    checkinQrSvg.value = await createQrSvg(no)
+  } catch {
+    checkinQrSvg.value = ''
+  }
 }
 function editAnnouncement(a = {}) {
   Object.assign(announcementForm, { id: a.id, title: a.title || '', content: a.content || '', type: a.type || 'SYSTEM', pinned: !!a.pinned })
@@ -1908,21 +2741,45 @@ async function submitFeedbackHandle() {
     adminFeedback.value = await call('get', '/admin/feedback')
   } catch (e) { notify(e.message) }
 }
-async function addAdminSeat() {
-  if (!adminSeatRoomId.value) return notify('请先选择自习室')
+function openRevokeViolation(row) {
+  revokeViolationForm.id = row._rawId || row.id
+  revokeViolationForm.studentName = row.studentName || '—'
+  revokeViolationForm.reservationNo = row.reservation_no || '—'
+  revokeViolationForm.roomName = row.roomName || '—'
+  revokeViolationForm.seatNo = row.seatNo || '—'
+  revokeViolationForm.reserveDate = formatDate(row.reserve_date || row.reserveDate)
+  revokeViolationForm.remark = ''
+  revokeViolationOpen.value = true
+}
+async function submitRevokeViolation() {
+  if (!revokeViolationForm.id) return
   try {
-    await call('post', `/admin/rooms/${adminSeatRoomId.value}/seats`, {})
-    notify('已新增座位')
+    await call('post', `/admin/reservations/${revokeViolationForm.id}/revoke-violation`, {
+      remark: revokeViolationForm.remark?.trim() || ''
+    })
+    revokeViolationOpen.value = false
+    notify('违约已撤销，信用分已恢复')
+    adminReservations.value = await call('get', '/admin/reservations')
+  } catch (e) { notify(e.message) }
+}
+async function addAdminSeat() {
+  if (!roomForm.id) return notify('请先保存自习室')
+  try {
+    await call('post', `/admin/rooms/${roomForm.id}/seats`, {})
+    notify('座位已补全')
     await loadAdminSeats()
     await loadRooms()
   } catch (e) { notify(e.message) }
 }
 async function deleteSeatEdit() {
   if (!seatEditForm.id) return
-  openModalConfirm('删除座位', '删除后不可恢复，确定删除该座位吗？', async () => {
+  const seatId = seatEditForm.id
+  const seatLabel = seatEditForm.seat_no || '该座位'
+  seatEditOpen.value = false
+  await nextTick()
+  openModalConfirm('删除座位', `确定删除座位 ${seatLabel} 吗？删除后不可恢复。`, async () => {
     try {
-      await call('delete', `/admin/seats/${seatEditForm.id}`)
-      seatEditOpen.value = false
+      await call('delete', `/admin/seats/${seatId}`)
       notify('座位已删除')
       await loadAdminSeats()
       await loadRooms()
@@ -1931,13 +2788,17 @@ async function deleteSeatEdit() {
 }
 async function loadAdminStatistics() {
   try {
-    adminStatsReport.value = await call('get', '/admin/statistics/report', null, { params: { period: adminStatsPeriod.value } })
+    const params = { period: adminStatsPeriod.value, rangeMode: adminStatsRangeMode.value }
+    if (adminStatsRoomId.value) params.roomId = adminStatsRoomId.value
+    adminStatsReport.value = await call('get', '/admin/statistics/report', null, { params })
     await nextTick()
     drawUsageChart()
   } catch (e) { notify(e.message) }
 }
 function downloadReport() {
-  api.get('/admin/statistics/export', { responseType: 'blob', params: { period: adminStatsPeriod.value } }).then(res => {
+  const params = { period: adminStatsPeriod.value, rangeMode: adminStatsRangeMode.value }
+  if (adminStatsRoomId.value) params.roomId = adminStatsRoomId.value
+  api.get('/admin/statistics/export', { responseType: 'blob', params }).then(res => {
     const url = URL.createObjectURL(res.data)
     const a = document.createElement('a')
     a.href = url
@@ -1950,62 +2811,55 @@ function drawStudentChart() {
   nextTick(() => {
     const el = studentChart.value
     if (!el) return
-    echarts.init(el).setOption({ xAxis: { type: 'category', data: (studyStats.value.series || []).map(x => String(x.label).slice(5, 10)) }, yAxis: { type: 'value' }, series: [{ type: 'bar', data: (studyStats.value.series || []).map(x => x.minutes), itemStyle: { color: '#5f73fb' } }] })
-  })
-}
-function drawAdminChart() {
-  const trend = dashboard.value.weeklyTrend || []
-  if (adminChart.value) {
-    echarts.init(adminChart.value).setOption({
-      tooltip: {},
-      title: { text: '本周预约趋势', left: 'center', textStyle: { fontSize: 14 } },
-      xAxis: { type: 'category', data: trend.map(x => x.label) },
-      yAxis: { type: 'value' },
-      series: [{ type: 'bar', data: trend.map(x => x.count), itemStyle: { color: '#6c5ce7' } }]
+    echarts.init(el).setOption({
+      tooltip: hourTooltip(),
+      xAxis: { type: 'category', name: '日期', data: (studyStats.value.series || []).map(x => String(x.label).slice(5, 10)) },
+      yAxis: hourYAxis(),
+      series: [{ name: '学习时长', type: 'bar', data: (studyStats.value.series || []).map(x => Number(((Number(x.minutes || 0)) / 60).toFixed(1))), itemStyle: { color: '#5f73fb' } }]
     })
-  }
+  })
 }
 function drawUsageChart() {
   if (!usageChart.value) return
   const chart = echarts.init(usageChart.value)
   const periodLabel = adminStatsReport.value.summary?.periodLabel || '今日'
   if (statAdminView.value === 'peak') {
-    const data = adminStatsReport.value.peak?.length ? adminStatsReport.value.peak : (peakStats.value || [])
+    const data = adminStatsReport.value.peak || []
     chart.setOption({
-      tooltip: {},
+      tooltip: countTooltip(),
       title: { text: `${periodLabel}高峰时段`, left: 'center', textStyle: { fontSize: 14 } },
-      xAxis: { type: 'category', data: data.map(x => `${x.hour}时`) },
-      yAxis: { type: 'value' },
-      series: [{ type: 'bar', data: data.map(x => x.count), itemStyle: { color: '#4f6ef7' } }]
+      xAxis: { type: 'category', name: '时段', data: data.map(x => peakAxisLabel(x)) },
+      yAxis: countYAxis('预约次数（次）'),
+      series: [{ name: '预约数', type: 'bar', data: data.map(x => statCount(x)), itemStyle: { color: '#4f6ef7' } }]
     }, true)
     return
   }
-  const data = adminStatsReport.value.usage?.length ? adminStatsReport.value.usage : (dashboard.value.usage || [])
+  const data = adminStatsReport.value.usage || []
   if (statAdminView.value === 'share') {
     chart.setOption({
-      tooltip: {},
+      tooltip: { trigger: 'item', formatter: '{b}<br/>预约 {c} 次（{d}%）' },
       title: { text: `${periodLabel}自习室预约占比`, left: 'center', textStyle: { fontSize: 14 } },
-      series: [{ type: 'pie', radius: '70%', data: data.map(x => ({ name: x.roomName, value: x.reservationCount || x.usageRate })) }]
+      series: [{ name: '预约占比', type: 'pie', radius: '70%', data: data.map(x => ({ name: x.roomName, value: x.reservationCount || x.usageRate })) }]
     }, true)
     return
   }
   const trend = adminStatsReport.value.trend || []
   if (trend.length) {
     chart.setOption({
-      tooltip: {},
+      tooltip: countTooltip(),
       title: { text: `${periodLabel}预约趋势`, left: 'center', textStyle: { fontSize: 14 } },
-      xAxis: { type: 'category', data: trend.map(x => x.label) },
-      yAxis: { type: 'value' },
-      series: [{ type: 'line', smooth: true, data: trend.map(x => x.count), itemStyle: { color: '#6c5ce7' } }]
+      xAxis: { type: 'category', name: '时段', data: trend.map(x => trendAxisLabel(x)) },
+      yAxis: countYAxis(),
+      series: [{ name: '预约数', type: 'line', smooth: true, data: trend.map(x => statCount(x)), itemStyle: { color: '#6c5ce7' } }]
     }, true)
     return
   }
   chart.setOption({
-    tooltip: {},
+    tooltip: { trigger: 'axis', valueFormatter: (v) => `${v}%` },
     title: { text: `${periodLabel}各自习室使用率`, left: 'center', textStyle: { fontSize: 14 } },
-    xAxis: { type: 'category', data: data.map(x => x.roomName) },
-    yAxis: { type: 'value', axisLabel: { formatter: '{value}%' } },
-    series: [{ type: 'bar', data: data.map(x => x.usageRate), itemStyle: { color: '#6c5ce7' } }]
+    xAxis: { type: 'category', name: '自习室', data: data.map(x => x.roomName) },
+    yAxis: percentYAxis(),
+    series: [{ name: '使用率', type: 'bar', data: data.map(x => x.usageRate), itemStyle: { color: '#6c5ce7' } }]
   }, true)
 }
 async function switchStatAdminView(view) {
@@ -2033,10 +2887,32 @@ const FeedbackBox = defineComponent({
   emits: ['submit'],
   setup(_, { emit }) {
     const content = ref('')
+    const severity = ref('MEDIUM')
+    const severityOptions = [
+      { value: 'LOW', label: '低' },
+      { value: 'MEDIUM', label: '中' },
+      { value: 'HIGH', label: '高' },
+      { value: 'CRITICAL', label: '紧急' }
+    ]
     return () => h('div', { class: 'card feedback-box' }, [
       h('strong', '问题反馈'),
+      h('label', { class: 'feedback-severity-label' }, '严重程度'),
+      h('select', {
+        class: 'input',
+        value: severity.value,
+        onChange: e => { severity.value = e.target.value }
+      }, severityOptions.map(opt => h('option', { value: opt.value }, `${opt.label} — ${opt.value === 'LOW' ? '一般建议' : opt.value === 'MEDIUM' ? '影响使用' : opt.value === 'HIGH' ? '较严重' : '需立即处理'}`))),
       h('textarea', { placeholder: '描述遇到的问题或建议', value: content.value, onInput: e => { content.value = e.target.value } }),
-      h('button', { class: 'primary-action small', onClick: () => { if (content.value.trim()) { emit('submit', content.value); content.value = '' } } }, '提交反馈')
+      h('button', {
+        class: 'primary-action small',
+        onClick: () => {
+          if (content.value.trim()) {
+            emit('submit', { content: content.value, severity: severity.value })
+            content.value = ''
+            severity.value = 'MEDIUM'
+          }
+        }
+      }, '提交反馈')
     ])
   }
 })
@@ -2057,6 +2933,34 @@ const DataTable = defineComponent({
     ])
   }
 })
+const AdminPager = defineComponent({
+  name: 'AdminPager',
+  props: {
+    page: { type: Number, required: true },
+    total: { type: Number, required: true },
+    count: { type: Number, default: 0 }
+  },
+  emits: ['update:page'],
+  setup(props, { emit }) {
+    return () => {
+      if (!props.count) return null
+      const nodes = []
+      if (props.total > 1) {
+        nodes.push(h('div', { class: 'admin-pager' },
+          Array.from({ length: props.total }, (_, i) => i + 1).map(p =>
+            h('button', {
+              type: 'button',
+              class: { active: props.page === p },
+              onClick: () => emit('update:page', p)
+            }, String(p))
+          )
+        ))
+      }
+      nodes.push(h('p', { class: 'admin-pager-meta scanner-hint' }, `共 ${props.count} 条 · 第 ${props.page}/${props.total} 页`))
+      return h('div', { class: 'admin-pager-wrap' }, nodes)
+    }
+  }
+})
 
 window.addEventListener('resize', () => { width.value = window.innerWidth })
 onMounted(() => {
@@ -2068,9 +2972,30 @@ onMounted(() => {
   bootstrap()
 })
 watch(studentPage, (page) => {
-  if (page === 'checkin') startCheckinPagePoll()
-  else stopCheckinPagePoll()
+  if (page === 'checkin') {
+    startCheckinPagePoll()
+    refreshCheckinQr()
+  } else {
+    stopCheckinPagePoll()
+    checkinQrSvg.value = ''
+  }
 }, { immediate: true })
+watch([activeReservation, studentNoDisplay], () => {
+  if (studentPage.value === 'checkin' && activeReservation.value?.status === 'PENDING') {
+    refreshCheckinQr()
+  } else if (activeReservation.value?.status !== 'PENDING') {
+    checkinQrSvg.value = ''
+  }
+})
+watch([adminKeyword, adminStatusFilter], () => { adminAccountPage.value = 1 })
+watch([reservationKeyword, reservationStatusFilter, reservationRoomFilter], () => { reservationPage.value = 1 })
+watch([checkinKeyword, checkinResultFilter], () => { checkinPage.value = 1 })
+watch(decoratedLiveReservations, () => { liveReservationPage.value = 1 })
+watch([feedbackKeyword, feedbackStatusFilter], () => { feedbackPage.value = 1 })
+watch([logKeyword, logModuleFilter], () => { logPage.value = 1 })
+watch([roomKeyword, roomStatusFilter], () => { roomPage.value = 1 })
+watch(announcementKeyword, () => { announcementPage.value = 1 })
+watch(users, () => { userPage.value = 1 })
 onBeforeUnmount(() => {
   stopCheckinPagePoll()
   if (studyTimerHandle) clearInterval(studyTimerHandle)

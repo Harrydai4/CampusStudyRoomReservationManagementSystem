@@ -9,6 +9,12 @@ backups/
 frontend/node_modules/
 uploads/*
 !uploads/README.md
+!uploads/material/
+!uploads/material/**
+!uploads/layout/
+!uploads/layout/**
+!uploads/common/
+!uploads/common/**
 application-local.properties
 application-shared.properties
 SHARED_DATABASE.txt

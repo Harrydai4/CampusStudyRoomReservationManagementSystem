@@ -182,6 +182,11 @@ public class AppController {
         return ApiResponse.ok(app.dashboard(user));
     }
 
+    @GetMapping("/admin/live-reservations")
+    public ApiResponse<List<Map<String, Object>>> liveReservations(@AuthenticationPrincipal CurrentUser user) {
+        return ApiResponse.ok(app.liveReservations(user));
+    }
+
     @GetMapping("/admin/users")
     public ApiResponse<List<Map<String, Object>>> users(@RequestParam(required = false) String keyword,
                                                          @RequestParam(required = false) String auditStatus) {
@@ -191,6 +196,16 @@ public class AppController {
     @GetMapping("/admin/users/pending")
     public ApiResponse<List<Map<String, Object>>> pendingUsers() {
         return ApiResponse.ok(app.adminUsers(null, "PENDING"));
+    }
+
+    @GetMapping("/admin/users/export")
+    public ResponseEntity<byte[]> exportUsers(@RequestParam(required = false) String keyword,
+                                              @RequestParam(required = false) String auditStatus) {
+        byte[] bytes = ("\uFEFF" + app.exportUsersCsv(keyword, auditStatus)).getBytes(StandardCharsets.UTF_8);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=student-users.csv")
+                .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
+                .body(bytes);
     }
 
     @PostMapping("/admin/users/{id}/approve")
@@ -249,14 +264,18 @@ public class AppController {
     }
 
     @PutMapping("/admin/seats/{id}")
-    public ApiResponse<Void> updateSeat(@PathVariable Long id, @RequestBody Map<String, Object> req) {
-        app.updateSeat(id, req);
+    public ApiResponse<Void> updateSeat(@AuthenticationPrincipal CurrentUser user,
+                                      @PathVariable Long id,
+                                      @RequestBody Map<String, Object> req) {
+        app.updateSeat(user, id, req);
         return ApiResponse.ok(null);
     }
 
     @PutMapping("/admin/rooms/{id}/seats/batch")
-    public ApiResponse<Void> batchSeats(@PathVariable Long id, @RequestBody Map<String, Object> req) {
-        app.batchSeats(id, req);
+    public ApiResponse<Void> batchSeats(@AuthenticationPrincipal CurrentUser user,
+                                        @PathVariable Long id,
+                                        @RequestBody Map<String, Object> req) {
+        app.batchSeats(user, id, req);
         return ApiResponse.ok(null);
     }
 
@@ -275,6 +294,14 @@ public class AppController {
     @GetMapping("/admin/reservations")
     public ApiResponse<List<Map<String, Object>>> adminReservations(@AuthenticationPrincipal CurrentUser user) {
         return ApiResponse.ok(app.adminReservations(user));
+    }
+
+    @PostMapping("/admin/reservations/{id}/revoke-violation")
+    public ApiResponse<Map<String, Object>> revokeViolation(@AuthenticationPrincipal CurrentUser user,
+                                                             @PathVariable Long id,
+                                                             @RequestBody(required = false) Map<String, Object> req) {
+        String remark = req == null ? "" : String.valueOf(req.getOrDefault("remark", ""));
+        return ApiResponse.ok(app.revokeViolation(user, id, remark));
     }
 
     @PostMapping("/admin/checkin/scan")
@@ -314,20 +341,26 @@ public class AppController {
 
     @GetMapping("/admin/statistics/usage")
     public ApiResponse<List<Map<String, Object>>> usage(@AuthenticationPrincipal CurrentUser user,
-                                                          @RequestParam(defaultValue = "day") String period) {
-        return ApiResponse.ok(app.statisticsUsage(user, period));
+                                                          @RequestParam(defaultValue = "day") String period,
+                                                          @RequestParam(required = false) Long roomId,
+                                                          @RequestParam(defaultValue = "current") String rangeMode) {
+        return ApiResponse.ok(app.statisticsUsage(user, period, roomId, rangeMode));
     }
 
     @GetMapping("/admin/statistics/peak")
     public ApiResponse<List<Map<String, Object>>> peak(@AuthenticationPrincipal CurrentUser user,
-                                                        @RequestParam(defaultValue = "day") String period) {
-        return ApiResponse.ok(app.statisticsPeak(user, period));
+                                                        @RequestParam(defaultValue = "day") String period,
+                                                        @RequestParam(required = false) Long roomId,
+                                                        @RequestParam(defaultValue = "current") String rangeMode) {
+        return ApiResponse.ok(app.statisticsPeak(user, period, roomId, rangeMode));
     }
 
     @GetMapping("/admin/statistics/report")
     public ApiResponse<Map<String, Object>> statisticsReport(@AuthenticationPrincipal CurrentUser user,
-                                                              @RequestParam(defaultValue = "day") String period) {
-        return ApiResponse.ok(app.statisticsReport(user, period));
+                                                              @RequestParam(defaultValue = "day") String period,
+                                                              @RequestParam(required = false) Long roomId,
+                                                              @RequestParam(defaultValue = "current") String rangeMode) {
+        return ApiResponse.ok(app.statisticsReport(user, period, roomId, rangeMode));
     }
 
     @GetMapping("/admin/statistics/credit")
@@ -337,8 +370,10 @@ public class AppController {
 
     @GetMapping("/admin/statistics/export")
     public ResponseEntity<byte[]> export(@AuthenticationPrincipal CurrentUser user,
-                                         @RequestParam(defaultValue = "day") String period) {
-        byte[] bytes = ("\uFEFF" + app.exportCsv(user, period)).getBytes(StandardCharsets.UTF_8);
+                                         @RequestParam(defaultValue = "day") String period,
+                                         @RequestParam(required = false) Long roomId,
+                                         @RequestParam(defaultValue = "current") String rangeMode) {
+        byte[] bytes = ("\uFEFF" + app.exportCsv(user, period, roomId, rangeMode)).getBytes(StandardCharsets.UTF_8);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=study-room-report.csv")
                 .contentType(new MediaType("text", "csv", StandardCharsets.UTF_8))
@@ -366,5 +401,30 @@ public class AppController {
     @GetMapping("/admin/admins")
     public ApiResponse<List<Map<String, Object>>> adminAccounts(@AuthenticationPrincipal CurrentUser user) {
         return ApiResponse.ok(app.adminAccounts(user));
+    }
+
+    @PostMapping("/admin/admins")
+    public ApiResponse<Map<String, Object>> createAdmin(@AuthenticationPrincipal CurrentUser user,
+                                                        @RequestBody Map<String, Object> req) {
+        return ApiResponse.ok(app.createAdminAccount(user, req));
+    }
+
+    @PutMapping("/admin/admins/{id}")
+    public ApiResponse<Map<String, Object>> updateAdmin(@AuthenticationPrincipal CurrentUser user,
+                                                        @PathVariable Long id,
+                                                        @RequestBody Map<String, Object> req) {
+        return ApiResponse.ok(app.updateAdminAccount(user, id, req));
+    }
+
+    @PostMapping("/admin/admins/{id}/disable")
+    public ApiResponse<Void> disableAdmin(@AuthenticationPrincipal CurrentUser user, @PathVariable Long id) {
+        app.setAdminAccountStatus(user, id, "DISABLED");
+        return ApiResponse.ok(null);
+    }
+
+    @PostMapping("/admin/admins/{id}/enable")
+    public ApiResponse<Void> enableAdmin(@AuthenticationPrincipal CurrentUser user, @PathVariable Long id) {
+        app.setAdminAccountStatus(user, id, "NORMAL");
+        return ApiResponse.ok(null);
     }
 }

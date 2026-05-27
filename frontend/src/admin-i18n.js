@@ -5,6 +5,10 @@ export const ADMIN_COLUMN_LABELS = {
   studentNo: '学号',
   studentName: '姓名',
   name: '姓名',
+  account: '登录账号',
+  roleLabel: '角色',
+  managedRooms: '负责自习室',
+  phone: '手机号',
   college: '学院',
   credit_score: '信用分',
   auditLabel: '审核状态',
@@ -15,6 +19,7 @@ export const ADMIN_COLUMN_LABELS = {
   reserve_date: '预约日期',
   reserveDate: '预约日期',
   status: '状态',
+  cancel_reason: '原因/备注',
   checkin_time: '签到时间',
   checkout_time: '签退时间',
   result: '签到结果',
@@ -69,7 +74,8 @@ export function formatAdminCell(key, value, row = {}) {
 const LOG_LABELS = {
   USER: '用户', ROOM: '自习室', AUTH: '认证', RESERVATION: '预约', FEEDBACK: '反馈',
   APPROVE: '通过', REJECT: '拒绝', CREATE: '创建', UPDATE: '更新', DELETE: '删除',
-  CHANGE_PASSWORD: '改密', STUDENT: '学生', ADMIN: '管理员', STUDY_ROOM: '自习室'
+  ADMIN: '管理员', STUDY_ROOM: '自习室', ADMIN_ACCOUNT: '管理员账号',
+  ENABLE: '启用', DISABLE: '禁用', SEAT: '座位', REVOKE_VIOLATION: '撤销违约'
 }
 
 export function decorateReservationRow(row) {

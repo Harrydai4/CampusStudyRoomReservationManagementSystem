@@ -1,0 +1,10 @@
+{
+  "generatedAt": "2026-05-26 23:55:00",
+  "database": "study_room_reservation",
+  "sqlFiles": ["schema.sql", "data.sql", "database-full.sql"],
+  "uploadCount": 8,
+  "leaderScript": "scripts/setup-after-clone.ps1",
+  "leaderGuide": "组长复现指南.md",
+  "branch": "v1.2-harrydai4",
+  "note": "Leader runs setup-after-clone.ps1 after clone"
+}

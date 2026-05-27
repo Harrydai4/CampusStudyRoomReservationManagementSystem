@@ -56,7 +56,8 @@ try {
     if ($UseFullDump -and (Test-Path $fullSql)) {
         if (Test-Path $initSql) { Invoke-SqlFile -Path $initSql }
         Invoke-SqlFile -Path $fullSql -DatabaseName "study_room_reservation"
-        Write-Host "OK: imported database-full.sql" -ForegroundColor Green
+        Write-Host "OK: imported database-full.sql（已覆盖为本仓库快照数据）" -ForegroundColor Green
+        Write-Host "提示: 若需与 SQL 完全一致，请在 application-local.properties 设置 app.demo.sync-accounts-on-startup=false" -ForegroundColor Yellow
         return
     }
 
