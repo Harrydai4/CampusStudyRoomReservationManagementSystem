@@ -5,6 +5,7 @@
   "uploadCount": 8,
   "leaderScript": "scripts/setup-after-clone.ps1",
   "leaderGuide": "组长复现指南.md",
-  "branch": "v1.2-harrydai4",
+  "branch": "v1.3-harrydai4",
+  "leaderLauncher": "组长一键启动.vbs",
   "note": "SQL dump matches author MySQL at export time; leader uses own MySQL root password locally"
 }

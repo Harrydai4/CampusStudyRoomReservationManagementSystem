@@ -1,6 +1,6 @@
 # 校园自习室预约管理系统（CSRRMupdate）
 
-> **版本**：V1.2.1 · Spring Boot 3.5 + Vue 3 + MySQL 8
+> **版本**：V1.3 · Spring Boot 3.5 + Vue 3 + MySQL 8
 
 ---
 
@@ -8,7 +8,7 @@
 
 | 你是谁 | 只看这一份 |
 |--------|------------|
-| **组长 / 验收** | **[组长复现指南.md](组长复现指南.md)** → 一条命令 `.\scripts\setup-after-clone.ps1` |
+| **组长 / 验收** | 双击 **[组长一键启动.vbs](组长一键启动.vbs)**，或阅读 **[组长复现指南.md](组长复现指南.md)** |
 | **提交者（你）** | **[01-提交者必做清单.md](docs/01-使用指南/01-提交者必做清单.md)** |
 | **所有密码说明** | **[02-密码与账号说明.md](docs/01-使用指南/02-密码与账号说明.md)** |
 
@@ -41,7 +41,8 @@
 - `docs/06-部署配置/database-full.sql` — 完整数据库快照  
 - `uploads/` — 上传图片  
 - `src/main/resources/static/` — 已构建前端（8080 直接访问）  
-- `scripts/setup-after-clone.ps1` — 组长一键导入并启动  
+- `组长一键启动.vbs` / `组长一键启动.bat` — 双击导入数据库并启动（无需手动开 PowerShell）  
+- `scripts/setup-after-clone.ps1` — 命令行一键导入并启动  
 
 ---
 

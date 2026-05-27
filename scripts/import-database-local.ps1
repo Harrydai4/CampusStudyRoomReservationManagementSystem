@@ -13,6 +13,9 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $cfgDir = Join-Path $root "docs\06-部署配置"
+if (-not (Test-Path $cfgDir)) {
+    $cfgDir = (Get-ChildItem (Join-Path $root "docs") -Directory | Where-Object { $_.Name -match '^06-' } | Select-Object -First 1).FullName
+}
 
 if (-not (Get-Command mysql -ErrorAction SilentlyContinue)) {
     Write-Host "ERR: mysql not in PATH." -ForegroundColor Red
@@ -56,14 +59,14 @@ try {
     if ($UseFullDump -and (Test-Path $fullSql)) {
         if (Test-Path $initSql) { Invoke-SqlFile -Path $initSql }
         Invoke-SqlFile -Path $fullSql -DatabaseName "study_room_reservation"
-        Write-Host "OK: imported database-full.sql（已覆盖为本仓库快照数据）" -ForegroundColor Green
-        Write-Host "提示: 若需与 SQL 完全一致，请在 application-local.properties 设置 app.demo.sync-accounts-on-startup=false" -ForegroundColor Yellow
+        Write-Host "OK: imported database-full.sql (snapshot restored)" -ForegroundColor Green
+        Write-Host "Tip: set app.demo.sync-accounts-on-startup=false in application-local.properties" -ForegroundColor Yellow
         return
     }
 
     foreach ($f in @($initSql, $schemaSql, $dataSql)) {
         if (-not (Test-Path $f)) {
-            Write-Host "ERR: missing $f — run export-database-for-git.ps1 on a machine with data first." -ForegroundColor Red
+            Write-Host "ERR: missing $f - run export-database-for-git.ps1 on a machine with data first." -ForegroundColor Red
             exit 1
         }
     }

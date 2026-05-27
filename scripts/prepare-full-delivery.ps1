@@ -36,25 +36,32 @@ if (-not $SkipBuild) {
 }
 
 $cfgDir = Join-Path $root "docs\06-部署配置"
+if (-not (Test-Path $cfgDir)) {
+    $cfgDir = (Get-ChildItem (Join-Path $root "docs") -Directory | Where-Object { $_.Name -match '^06-' } | Select-Object -First 1).FullName
+}
+$guideDir = Join-Path $root "docs\01-使用指南"
+if (-not (Test-Path $guideDir)) {
+    $guideDir = (Get-ChildItem (Join-Path $root "docs") -Directory | Where-Object { $_.Name -match '^01-' } | Select-Object -First 1).FullName
+}
 $files = @(
-    "docs\06-部署配置\schema.sql",
-    "docs\06-部署配置\data.sql",
-    "docs\06-部署配置\database-full.sql",
-    "docs\06-部署配置\init-shared-mysql.sql",
-    "docs\01-使用指南\09-全量交付与组长一键验收.md",
-    "scripts\setup-after-clone.ps1",
-    "scripts\prepare-full-delivery.ps1"
+    (Join-Path $cfgDir "schema.sql"),
+    (Join-Path $cfgDir "data.sql"),
+    (Join-Path $cfgDir "database-full.sql"),
+    (Join-Path $cfgDir "init-shared-mysql.sql"),
+    (Join-Path $guideDir "09-全量交付与组长一键验收.md"),
+    (Join-Path $root "scripts\setup-after-clone.ps1"),
+    (Join-Path $root "scripts\prepare-full-delivery.ps1")
 )
 
 Write-Host ""
 Write-Host "=== Files to commit ===" -ForegroundColor Yellow
-foreach ($rel in $files) {
-    $p = Join-Path $root ($rel -replace '/', '\')
+foreach ($p in $files) {
     if (Test-Path $p) {
         $size = (Get-Item $p).Length
+        $rel = $p.Substring($root.Length + 1)
         Write-Host "  [OK] $rel ($([math]::Round($size/1KB, 1)) KB)" -ForegroundColor Green
     } else {
-        Write-Host "  [!!] missing $rel" -ForegroundColor Red
+        Write-Host "  [!!] missing $p" -ForegroundColor Red
     }
 }
 
