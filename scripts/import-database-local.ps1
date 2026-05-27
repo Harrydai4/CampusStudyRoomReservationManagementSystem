@@ -13,8 +13,13 @@ param(
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
 $cfgDir = Join-Path $root "docs\06-部署配置"
-if (-not (Test-Path $cfgDir)) {
-    $cfgDir = (Get-ChildItem (Join-Path $root "docs") -Directory | Where-Object { $_.Name -match '^06-' } | Select-Object -First 1).FullName
+if (-not (Test-Path -LiteralPath $cfgDir)) {
+    $docsDir = Join-Path $root "docs"
+    if (Test-Path -LiteralPath $docsDir) {
+        $found = Get-ChildItem -LiteralPath $docsDir -Directory |
+            Where-Object { $_.Name -match '^06-' } | Select-Object -First 1
+        if ($found) { $cfgDir = $found.FullName }
+    }
 }
 
 if (-not (Get-Command mysql -ErrorAction SilentlyContinue)) {

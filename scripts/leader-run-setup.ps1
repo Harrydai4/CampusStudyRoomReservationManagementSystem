@@ -17,3 +17,5 @@ $args = @{
 if ($SkipImport) { $args.SkipImport = $true }
 
 & (Join-Path $PSScriptRoot "setup-after-clone.ps1") @args
+if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+exit 0

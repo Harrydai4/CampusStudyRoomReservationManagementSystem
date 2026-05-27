@@ -27,6 +27,19 @@ function Require-Cmd([string]$name, [string]$hint) {
     }
 }
 
+function Get-DeployConfigDir([string]$projectRoot) {
+    $cfgDir = Join-Path $projectRoot "docs\06-部署配置"
+    if (Test-Path -LiteralPath $cfgDir) { return $cfgDir }
+    $docsDir = Join-Path $projectRoot "docs"
+    if (Test-Path -LiteralPath $docsDir) {
+        $found = Get-ChildItem -LiteralPath $docsDir -Directory |
+            Where-Object { $_.Name -match '^06-' } |
+            Select-Object -First 1
+        if ($found) { return $found.FullName }
+    }
+    return $cfgDir
+}
+
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
 Write-Host " CSRRM setup after clone" -ForegroundColor Green
@@ -98,9 +111,12 @@ Write-Host "[OK] local config ready (demo sync off = keep SQL data)" -Foreground
 
 if (-not $SkipImport) {
     Write-Step "3/6 Import database-full.sql"
-    $fullSql = Join-Path $root "docs\06-部署配置\database-full.sql"
-    if (-not (Test-Path $fullSql)) {
+    $cfgDir = Get-DeployConfigDir $root
+    $fullSql = Join-Path $cfgDir "database-full.sql"
+    if (-not (Test-Path -LiteralPath $fullSql)) {
         Write-Host "ERR: missing database-full.sql" -ForegroundColor Red
+        Write-Host "      expected: $fullSql" -ForegroundColor Yellow
+        Write-Host "      Re-download full ZIP from GitHub." -ForegroundColor Yellow
         exit 1
     }
     & (Join-Path $PSScriptRoot "import-database-local.ps1") -Password $MySqlPassword -User $User -DbHost $DbHost -Port $Port -UseFullDump
