@@ -1,0 +1,18 @@
+校园自习室预约系统 — 组长 3 步启动（无需 Git）
+
+1. 从 GitHub 下载 ZIP 并解压
+   https://github.com/Harrydai4/CampusStudyRoomReservationManagementSystem
+   点击绿色 Code → Download ZIP（默认 master 即可，无需选分支）
+
+2. 进入解压后的文件夹（能看到 pom.xml 和本文件）
+
+3. 双击「组长一键启动.vbs」
+   - 输入本机 MySQL 的 root 密码
+   - 首次选「是」导入数据库
+   - 等待浏览器打开 http://localhost:8080
+
+登录：管理员 admin / admin123   学生 202301010101 / 123456
+
+事先安装：JDK 21+、MySQL 8（bin 加入 PATH）
+
+详细说明见：组长复现指南.md

@@ -15,7 +15,28 @@ If Not fso.FileExists(batPath) Then
 End If
 
 If Not fso.FileExists(root & "\pom.xml") Then
-    MsgBox "请在含 pom.xml 的项目根目录运行本启动器。", vbCritical, "CSRRM"
+    MsgBox "请在含 pom.xml 的项目根目录运行本启动器。" & vbCrLf & vbCrLf & _
+        "若刚下载 ZIP：请进入解压后的主文件夹（能看到 组长一键启动.vbs 的那一层）。", vbCritical, "CSRRM"
+    WScript.Quit 1
+End If
+
+Dim cfgDir, fullSql, found
+cfgDir = root & "\docs\06-部署配置"
+fullSql = cfgDir & "\database-full.sql"
+found = fso.FileExists(fullSql)
+If Not found Then
+    Dim d, subf
+    Set d = fso.GetFolder(root & "\docs")
+    For Each subf In d.SubFolders
+        If Left(subf.Name, 3) = "06-" Then
+            fullSql = subf.Path & "\database-full.sql"
+            If fso.FileExists(fullSql) Then found = True: Exit For
+        End If
+    Next
+End If
+If Not found Then
+    MsgBox "未找到 database-full.sql 。" & vbCrLf & vbCrLf & _
+        "请从 GitHub 重新 Download ZIP（默认 master），不要只复制部分文件。", vbCritical, "CSRRM"
     WScript.Quit 1
 End If
 
