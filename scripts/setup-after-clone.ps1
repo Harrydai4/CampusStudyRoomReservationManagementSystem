@@ -84,7 +84,8 @@ if (-not $MySqlPassword) {
         [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
 }
 
-$uploadDir = Join-Path $root "uploads"
+# Properties 文件中反斜杠会触发 \u 等转义错误，必须用正斜杠
+$uploadDir = ((Join-Path $root "uploads") -replace '\\', '/')
 $outLines = New-Object System.Collections.Generic.List[string]
 $hasPwd = $false
 $hasUpload = $false

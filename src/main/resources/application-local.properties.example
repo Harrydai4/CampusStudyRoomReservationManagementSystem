@@ -10,6 +10,7 @@ spring.datasource.password=123456
 # 可选：JWT 与上传目录
 # app.jwt.secret=请使用至少32字符的随机字符串
 # 上传目录（建议使用绝对路径；默认项目根目录/uploads）
+# app.upload.dir 必须用正斜杠 / ，不要用反斜杠 \（否则 Spring 报 Malformed \\uxxxx）
 # app.upload.dir=D:/SchoolWorkPlace/Database/CSRRMupdate/uploads
 
 # ---------- 多人共用库（可选）----------
