@@ -30,7 +30,6 @@ class AppServiceCheckinWindowTest {
     @Test
     void scanCheckinByStudentNoWithinWindow() {
         Long userId = jdbc.queryForObject("select id from user_account where username='202301010101'", Long.class);
-        jdbc.update("delete from reservation where user_id=? and status='PENDING'", userId);
         Long seatId = jdbc.queryForObject("select id from seat where is_seat=1 limit 1", Long.class);
         Long roomId = jdbc.queryForObject("select room_id from seat where id=?", Long.class, seatId);
         LocalDate today = LocalDate.now();
@@ -38,14 +37,14 @@ class AppServiceCheckinWindowTest {
         jdbc.update("""
                 insert into reservation(reservation_no,user_id,room_id,seat_id,reserve_date,start_time,end_time,status,created_at,updated_at)
                 values(?,?,?,?,?,?,?,?,?,?)
-                """, "TEST-STUDENT-NO", userId, roomId, seatId, Date.valueOf(today),
+                """, today.toString().replace("-", "") + "90000001", userId, roomId, seatId, Date.valueOf(today),
                 Time.valueOf(nowTime), Time.valueOf(nowTime.plusHours(2)),
-                "PENDING", LocalDateTime.now(), LocalDateTime.now());
+                "待使用", LocalDateTime.now(), LocalDateTime.now());
 
         var admin = new com.scau.campusstudyroomreservationmanagementsystem.support.CurrentUser(
                 1L, "admin", "ADMIN", "张老师");
         var result = appService.scanCheckin(admin, Map.of("studentNo", "202301010101"));
-        assertEquals("USING", result.get("status"));
+        assertEquals("使用中", result.get("status"));
     }
 
     @Test
@@ -57,9 +56,9 @@ class AppServiceCheckinWindowTest {
         jdbc.update("""
                 insert into reservation(reservation_no,user_id,room_id,seat_id,reserve_date,start_time,end_time,status,created_at,updated_at)
                 values(?,?,?,?,?,?,?,?,?,?)
-                """, "TEST-QR-WINDOW", userId, roomId, seatId, Date.valueOf(tomorrow),
+                """, tomorrow.toString().replace("-", "") + "90000002", userId, roomId, seatId, Date.valueOf(tomorrow),
                 Time.valueOf(LocalTime.of(19, 0)), Time.valueOf(LocalTime.of(21, 0)),
-                "PENDING", LocalDateTime.now(), LocalDateTime.now());
+                "待使用", LocalDateTime.now(), LocalDateTime.now());
 
         var user = new com.scau.campusstudyroomreservationmanagementsystem.support.CurrentUser(
                 userId, "202301010101", "STUDENT", "张三");
@@ -77,15 +76,15 @@ class AppServiceCheckinWindowTest {
         jdbc.update("""
                 insert into reservation(reservation_no,user_id,room_id,seat_id,reserve_date,start_time,end_time,status,sign_in_time,created_at,updated_at)
                 values(?,?,?,?,?,?,?,?,?,?,?)
-                """, "TEST-INVALID-CHECKIN", userId, roomId, seatId, Date.valueOf(today),
+                """, today.toString().replace("-", "") + "90000003", userId, roomId, seatId, Date.valueOf(today),
                 Time.valueOf(LocalTime.of(19, 0)), Time.valueOf(LocalTime.of(21, 0)),
-                "USING", signIn, LocalDateTime.now(), LocalDateTime.now());
+                "使用中", signIn, LocalDateTime.now(), LocalDateTime.now());
         Long reservationId = jdbc.queryForObject(
-                "select id from reservation where reservation_no='TEST-INVALID-CHECKIN'", Long.class);
+                "select id from reservation where reservation_no=?", Long.class, today.toString().replace("-", "") + "90000003");
         jdbc.update("""
                 insert into checkin_record(reservation_id,user_id,admin_id,checkin_method,checkin_time,result)
                 values(?,?,?,?,?,?)
-                """, reservationId, userId, 1L, "QR_SCAN", signIn, "ON_TIME");
+                """, reservationId, userId, 1L, "扫码签到", signIn, "准时");
 
         appService.scheduledProcessInvalidCheckin();
 
@@ -93,7 +92,7 @@ class AppServiceCheckinWindowTest {
                 "select status from reservation where id=?", String.class, reservationId);
         Integer checkinCount = jdbc.queryForObject(
                 "select count(*) from checkin_record where reservation_id=?", Integer.class, reservationId);
-        assertEquals("PENDING", status);
+        assertEquals("待使用", status);
         assertEquals(0, checkinCount);
     }
 }

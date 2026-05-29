@@ -24,7 +24,6 @@ public class ScheduledTaskService {
             appService.scheduledProcessNoShow();
             appService.scheduledProcessAutoCheckout();
             appService.scheduledProcessBlacklistRelease();
-            appService.scheduledProcessTempLeaveTimeout();
         } catch (Exception ex) {
             log.warn("定时任务执行异常: {}", ex.getMessage());
         }

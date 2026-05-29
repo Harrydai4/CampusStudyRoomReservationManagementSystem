@@ -37,13 +37,14 @@ class AppServiceScheduledTest {
         jdbc.update("""
                 insert into reservation(reservation_no,user_id,room_id,seat_id,reserve_date,start_time,end_time,status,created_at,updated_at)
                 values(?,?,?,?,?,?,?,?,?,?)
-                """, "TEST-NOSHOW-001", userId, roomId, seatId, Date.valueOf(today), Time.valueOf(start), Time.valueOf(end),
-                "PENDING", LocalDateTime.now(), LocalDateTime.now());
+                """, today.toString().replace("-", "") + "90000004", userId, roomId, seatId, Date.valueOf(today), Time.valueOf(start), Time.valueOf(end),
+                "待使用", LocalDateTime.now(), LocalDateTime.now());
 
         appService.scheduledProcessNoShow();
 
         Integer violated = jdbc.queryForObject(
-                "select count(*) from reservation where reservation_no='TEST-NOSHOW-001' and status='VIOLATED'", Integer.class);
+                "select count(*) from reservation where reservation_no=? and status='已违约'", Integer.class,
+                today.toString().replace("-", "") + "90000004");
         int after = jdbc.queryForObject("select credit_score from student_profile where user_id=?", Integer.class, userId);
         assertEquals(1, violated);
         assertTrue(after < before);

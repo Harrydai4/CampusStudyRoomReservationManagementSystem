@@ -117,16 +117,6 @@ public class AppController {
         return ApiResponse.ok(app.checkout(user, id));
     }
 
-    @PostMapping("/reservations/{id}/temp-leave")
-    public ApiResponse<Map<String, Object>> tempLeave(@AuthenticationPrincipal CurrentUser user, @PathVariable Long id) {
-        return ApiResponse.ok(app.startTempLeave(user, id));
-    }
-
-    @PostMapping("/reservations/{id}/temp-return")
-    public ApiResponse<Map<String, Object>> tempReturn(@AuthenticationPrincipal CurrentUser user, @PathVariable Long id) {
-        return ApiResponse.ok(app.endTempLeave(user, id));
-    }
-
     @GetMapping("/credits/my")
     public ApiResponse<Map<String, Object>> credit(@AuthenticationPrincipal CurrentUser user) {
         return ApiResponse.ok(app.credit(user));

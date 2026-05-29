@@ -20,6 +20,46 @@ import java.util.*;
 
 @Service
 public class AppService {
+    private static final String ROLE_STUDENT_DB = "学生";
+    private static final String ROLE_ADMIN_DB = "普通管理员";
+    private static final String ROLE_SUPER_ADMIN_DB = "超级管理员";
+    private static final String ACCOUNT_NORMAL = "正常";
+    private static final String ACCOUNT_PENDING = "待审核";
+    private static final String ACCOUNT_DISABLED = "禁用";
+    private static final String ACCOUNT_BLACKLIST = "黑名单";
+    private static final String ADMIN_NORMAL = "正常";
+    private static final String ADMIN_LEFT = "离职";
+    private static final String AUDIT_PENDING = "待审核";
+    private static final String AUDIT_APPROVED = "已通过";
+    private static final String AUDIT_REJECTED = "已拒绝";
+    private static final String ROOM_OPEN = "开放";
+    private static final String ROOM_CLOSED = "关闭";
+    private static final String ROOM_MAINTENANCE = "维护中";
+    private static final String SEAT_NORMAL = "空闲";
+    private static final String SEAT_MAINTENANCE = "维修";
+    private static final String SEAT_DISABLED = "停用";
+    private static final String RES_PENDING = "待使用";
+    private static final String RES_USING = "使用中";
+    private static final String RES_COMPLETED = "已完成";
+    private static final String RES_CANCELLED = "已取消";
+    private static final String RES_VIOLATED = "已违约";
+    private static final String SLOT_ACTIVE = "占用";
+    private static final String BLACKLIST_ACTIVE = "生效";
+    private static final String BLACKLIST_RELEASED = "已解除";
+    private static final String CHECKIN_ON_TIME = "准时";
+    private static final String CHECKIN_STUDENT_NO = "学号签到";
+    private static final String CHECKIN_QR = "扫码签到";
+    private static final String FEEDBACK_PENDING = "待处理";
+    private static final String FEEDBACK_DONE = "已处理";
+    private static final String FEEDBACK_SUGGESTION = "建议";
+    private static final String FEEDBACK_SEAT_REPAIR = "座位报修";
+    private static final String FEEDBACK_MEDIUM = "中";
+    private static final String ANNOUNCEMENT_PUBLISHED = "已发布";
+    private static final String ANNOUNCEMENT_SYSTEM = "系统通知";
+    private static final String CREDIT_ON_TIME = "签到奖励";
+    private static final String CREDIT_VIOLATION = "违约扣减";
+    private static final String CREDIT_SYSTEM_RESTORE = "系统恢复";
+    private static final String CREDIT_OTHER = "其他";
     /** 预约开始前可签到分钟数（与前端提示一致） */
     private static final int CHECKIN_EARLY_MINUTES = 15;
     /** 预约开始后可签到分钟数；亦用于禁止预约已过期超过该分钟数的时段 */
@@ -42,38 +82,38 @@ public class AppService {
     public Map<String, Object> register(Map<String, Object> req) {
         String studentNo = text(req, "studentNo", "username");
         String password = text(req, "password");
-        if (studentNo.length() < 10 || password.length() < 6) {
+        if (!studentNo.matches("\\d{12}") || password.length() < 6) {
             throw new BusinessException(400, "学号或密码格式不正确");
         }
         LocalDateTime now = LocalDateTime.now();
         jdbc.update("insert into user_account(username,password_hash,role,status,created_at,updated_at) values(?,?,?,?,?,?)",
-                studentNo, passwordEncoder.encode(password), "STUDENT", "PENDING", now, now);
+                studentNo, passwordEncoder.encode(password), ROLE_STUDENT_DB, ACCOUNT_PENDING, now, now);
         Long userId = jdbc.queryForObject("select id from user_account where username=?", Long.class, studentNo);
         jdbc.update("""
                 insert into student_profile(user_id,student_no,name,gender,college,major,grade,phone,email,material_url,audit_status,credit_score,created_at,updated_at)
                 values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 userId, studentNo, text(req, "name"), text(req, "gender", "男"), text(req, "college"),
-                text(req, "major"), text(req, "grade"), text(req, "phone"), text(req, "email"),
-                text(req, "materialUrl", "/uploads/material/register.pdf"), "PENDING", 300, now, now);
-        return Map.of("registerId", userId, "auditStatus", "PENDING");
+                text(req, "major"), normalizeGrade(text(req, "grade")), text(req, "phone"), text(req, "email"),
+                text(req, "materialUrl", "/uploads/material/register.pdf"), AUDIT_PENDING, 300, now, now);
+        return Map.of("registerId", userId, "auditStatus", AUDIT_PENDING);
     }
 
     public Map<String, Object> loginStudent(Map<String, Object> req) {
         String username = text(req, "username", "studentNo");
         String password = text(req, "password");
-        Map<String, Object> account = one("select * from user_account where username=? and role='STUDENT'", username);
+        Map<String, Object> account = one("select * from user_account where username=? and " + studentRolePredicate("user_account"), username);
         if (account == null || !passwordEncoder.matches(password, String.valueOf(account.get("password_hash")))) {
             throw new BusinessException(401, "账号或密码错误");
         }
         String status = String.valueOf(account.get("status"));
-        if ("PENDING".equals(status)) {
+        if (statusIs(status, ACCOUNT_PENDING, "PENDING")) {
             throw new BusinessException(403, "注册资料待审核，请耐心等待");
         }
-        if ("DISABLED".equals(status)) {
+        if (statusIs(status, ACCOUNT_DISABLED, "DISABLED")) {
             throw new BusinessException(403, "账号已禁用，请联系管理员");
         }
-        if ("BLACKLIST".equals(status)) {
+        if (statusIs(status, ACCOUNT_BLACKLIST, "BLACKLIST")) {
             throw new BusinessException(403, "账号处于黑名单，请联系管理员解除");
         }
         jdbc.update("update user_account set last_login_at=?,updated_at=? where id=?", LocalDateTime.now(), LocalDateTime.now(), account.get("id"));
@@ -89,11 +129,11 @@ public class AppService {
         if (account == null || !passwordEncoder.matches(password, String.valueOf(account.get("password_hash")))) {
             throw new BusinessException(401, "管理员账号或密码错误");
         }
-        if (!"NORMAL".equals(String.valueOf(account.get("status")))) {
+        if (!statusIs(account.get("status"), ADMIN_NORMAL, "NORMAL")) {
             throw new BusinessException(403, "管理员账号已禁用");
         }
         String dbRole = String.valueOf(account.get("role"));
-        String role = "SUPER_ADMIN".equals(dbRole) ? "SUPER_ADMIN" : "ADMIN";
+        String role = statusIs(dbRole, ROLE_SUPER_ADMIN_DB, "SUPER_ADMIN") ? "SUPER_ADMIN" : "ADMIN";
         CurrentUser user = new CurrentUser(num(account.get("id")), accountName, role, String.valueOf(account.get("name")));
         return Map.of("token", jwtService.createToken(user), "adminInfo", adminInfo(user));
     }
@@ -109,17 +149,26 @@ public class AppService {
 
     public Map<String, Object> adminInfo(CurrentUser user) {
         Map<String, Object> admin = one("select id,account,name,role,phone,status from admin_account where id=?", user.id());
-        return admin == null ? Map.of("id", user.id(), "account", user.username(), "role", user.role()) : admin;
+        if (admin == null) {
+            return Map.of("id", user.id(), "account", user.username(), "role", user.role());
+        }
+        admin.put("roleLabel", admin.get("role"));
+        admin.put("statusLabel", admin.get("status"));
+        admin.put("role", statusIs(admin.get("role"), ROLE_SUPER_ADMIN_DB, "SUPER_ADMIN") ? "SUPER_ADMIN" : "ADMIN");
+        admin.put("status", statusIs(admin.get("status"), ADMIN_NORMAL, "NORMAL") ? "NORMAL" : "DISABLED");
+        return admin;
     }
 
     public List<Map<String, Object>> rooms(CurrentUser user) {
         String sql = """
                 select r.*,
-                  (select count(*) from seat s where s.room_id=r.id and s.is_seat=1 and s.status='NORMAL') normalSeatCount
+                  (r.row_count * r.col_count) cell_count,
+                  (select count(*) from seat s where s.room_id=r.id and s.is_seat=1) seat_count,
+                  (select count(*) from seat s where s.room_id=r.id and s.is_seat=1 and %s) normalSeatCount
                 from study_room r
                 where (? is null or r.manager_id=? or ?='SUPER_ADMIN')
                 order by r.id
-                """;
+                """.formatted(normalSeatPredicate("s"));
         Long manager = user != null && user.isAdmin() ? user.id() : null;
         String role = user != null ? user.role() : null;
         List<Map<String, Object>> rows = jdbc.queryForList(sql, manager, manager, role);
@@ -128,7 +177,13 @@ public class AppService {
     }
 
     public Map<String, Object> room(Long id) {
-        Map<String, Object> room = one("select * from study_room where id=?", id);
+        Map<String, Object> room = one("""
+                select r.*,
+                       (r.row_count * r.col_count) cell_count,
+                       (select count(*) from seat s where s.room_id=r.id and s.is_seat=1) seat_count
+                from study_room r
+                where r.id=?
+                """, id);
         if (room == null) {
             throw new BusinessException(404, "自习室不存在");
         }
@@ -159,12 +214,12 @@ public class AppService {
         List<Map<String, Object>> occupiedRows = jdbc.queryForList("""
                 select rs.seat_id from reservation_slot rs
                 join seat s on s.id=rs.seat_id
-                where s.room_id=? and rs.status='ACTIVE' and rs.slot_start in (%s)
-                """.formatted(marks), params.toArray());
+                where s.room_id=? and %s and rs.slot_start in (%s)
+                """.formatted(activeSlotPredicate("rs"), marks), params.toArray());
         Set<Long> occupied = new HashSet<>();
         occupiedRows.forEach(r -> occupied.add(num(r.get("seat_id"))));
         for (Map<String, Object> seat : seats) {
-            boolean usable = bool(seat.get("is_seat")) && "NORMAL".equals(String.valueOf(seat.get("status")));
+            boolean usable = bool(seat.get("is_seat")) && statusIs(seat.get("status"), SEAT_NORMAL, "NORMAL");
             seat.put("available", usable && !occupied.contains(num(seat.get("id"))));
             seat.put("reserveState", !usable ? "disabled" : occupied.contains(num(seat.get("id"))) ? "reserved" : "free");
         }
@@ -184,67 +239,67 @@ public class AppService {
         }
         ensureReservationStartNotTooPast(date, start);
         Map<String, Object> profile = one("select * from student_profile where user_id=?", user.id());
-        if (profile == null || !"APPROVED".equals(String.valueOf(profile.get("audit_status")))) {
+        if (profile == null || !statusIs(profile.get("audit_status"), AUDIT_APPROVED, "APPROVED")) {
             throw new BusinessException(403, "学生资料未审核通过，不能预约");
         }
         if (intValue(profile.get("credit_score")) <= 0) {
             throw new BusinessException(403, "信用积分不足，暂不可预约");
         }
         Map<String, Object> room = room(roomId);
-        if (!"OPEN".equals(String.valueOf(room.get("status")))) {
+        if (!statusIs(room.get("status"), ROOM_OPEN, "OPEN")) {
             throw new BusinessException(409, "自习室维护中或已关闭");
         }
         validateTimeWithinRoom(start, end, room);
         Map<String, Object> seat = one("select * from seat where id=? and room_id=?", seatId, roomId);
-        if (seat == null || !bool(seat.get("is_seat")) || !"NORMAL".equals(String.valueOf(seat.get("status")))) {
+        if (seat == null || !bool(seat.get("is_seat")) || !statusIs(seat.get("status"), SEAT_NORMAL, "NORMAL")) {
             throw new BusinessException(409, "座位不可预约");
         }
         Integer overlap = jdbc.queryForObject("""
                 select count(*) from reservation
-                where user_id=? and reserve_date=? and status in ('PENDING','USING','TEMP_LEAVE')
+                where user_id=? and reserve_date=? and %s
                 and start_time < ? and end_time > ?
-                """, Integer.class, user.id(), Date.valueOf(date), Time.valueOf(end), Time.valueOf(start));
+                """.formatted(activeReservationPredicate("reservation")), Integer.class, user.id(), Date.valueOf(date), Time.valueOf(end), Time.valueOf(start));
         if (overlap != null && overlap > 0) {
             throw new BusinessException(409, "同一时间段不能重复预约多个座位");
         }
         LocalDateTime now = LocalDateTime.now();
-        String no = "R" + DateTimeFormatter.ofPattern("yyyyMMddHHmmss").format(now) + String.format("%03d", user.id() % 1000);
+        String no = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE)
+                + String.format("%08d", Math.floorMod(System.currentTimeMillis(), 100_000_000L));
         jdbc.update("insert into reservation(reservation_no,user_id,room_id,seat_id,reserve_date,start_time,end_time,status,created_at,updated_at) values(?,?,?,?,?,?,?,?,?,?)",
-                no, user.id(), roomId, seatId, Date.valueOf(date), Time.valueOf(start), Time.valueOf(end), "PENDING", now, now);
+                no, user.id(), roomId, seatId, Date.valueOf(date), Time.valueOf(start), Time.valueOf(end), RES_PENDING, now, now);
         Long reservationId = jdbc.queryForObject("select id from reservation where reservation_no=?", Long.class, no);
         try {
             for (LocalDateTime slot : slots(date, start, end)) {
                 jdbc.update("insert into reservation_slot(reservation_id,seat_id,slot_start,slot_end,status) values(?,?,?,?,?)",
-                        reservationId, seatId, slot, slot.plusMinutes(10), "ACTIVE");
+                        reservationId, seatId, slot, slot.plusMinutes(10), SLOT_ACTIVE);
             }
         } catch (DuplicateKeyException ex) {
             throw new BusinessException(409, "该座位当前时段已被预约");
         }
-        jdbc.update("insert into notification_message(user_id,title,content,type,related_id,created_at) values(?,?,?,?,?,?)",
-                user.id(), "预约成功", "你的座位预约已创建，请按时签到。", "RESERVATION", reservationId, now);
+        notifyUser(user.id(), "预约成功", "你的座位预约已创建，请按时签到。", "预约", reservationId);
         return reservationDetail(reservationId);
     }
 
     public List<Map<String, Object>> myReservations(CurrentUser user, String status, Boolean today) {
         List<Object> params = new ArrayList<>();
         StringBuilder sql = new StringBuilder("""
-                select r.*, sr.name roomName, sr.location, s.seat_no seatNo,
-                       tl.leave_time tempLeaveTime, tl.max_leave_minutes maxLeaveMinutes
+                select r.*, sr.name roomName, sr.location, s.seat_no seatNo
                 from reservation r join study_room sr on sr.id=r.room_id join seat s on s.id=r.seat_id
-                left join temp_leave tl on tl.reservation_id=r.id and tl.leave_status='ACTIVE'
                 where r.user_id=?
                 """);
         params.add(user.id());
         if (status != null && !status.isBlank() && !"ALL".equalsIgnoreCase(status)) {
             sql.append(" and r.status=?");
-            params.add(status);
+            params.add(dbReservationStatus(status));
         }
         if (Boolean.TRUE.equals(today)) {
             sql.append(" and r.reserve_date=?");
             params.add(Date.valueOf(LocalDate.now()));
         }
         sql.append(" order by r.reserve_date desc,r.start_time desc,r.id desc");
-        return jdbc.queryForList(sql.toString(), params.toArray());
+        List<Map<String, Object>> rows = jdbc.queryForList(sql.toString(), params.toArray());
+        rows.forEach(this::decorateReservationDuration);
+        return rows;
     }
 
     public Map<String, Object> reservationDetail(Long id) {
@@ -259,6 +314,7 @@ public class AppService {
         if (row == null) {
             throw new BusinessException(404, "预约不存在");
         }
+        decorateReservationDuration(row);
         return row;
     }
 
@@ -268,17 +324,17 @@ public class AppService {
         if (!Objects.equals(num(r.get("user_id")), user.id())) {
             throw new BusinessException(403, "不能取消他人的预约");
         }
-        if (!"PENDING".equals(String.valueOf(r.get("status")))) {
+        if (!statusIs(r.get("status"), RES_PENDING, "PENDING")) {
             throw new BusinessException(409, "当前预约不能取消");
         }
-        jdbc.update("update reservation set status='CANCELLED',cancel_reason='学生主动取消',updated_at=? where id=?", LocalDateTime.now(), id);
+        jdbc.update("update reservation set status=?,cancel_reason='学生主动取消',updated_at=? where id=?", RES_CANCELLED, LocalDateTime.now(), id);
         releaseReservationSlots(id);
         changeCredit(user.id(), CREDIT_CANCEL_PENALTY, "USER_CANCEL", "学生主动取消预约", id);
-        notifyUser(user.id(), "预约已取消", "你的预约已取消，已扣除 50 信用分。", "RESERVATION", id);
+        notifyUser(user.id(), "预约已取消", "你的预约已取消，已扣除 50 信用分。", "预约", id);
     }
 
     public Map<String, Object> qrCode(CurrentUser user) {
-        List<Map<String, Object>> pending = myReservations(user, "PENDING", false);
+        List<Map<String, Object>> pending = myReservations(user, RES_PENDING, false);
         if (pending.isEmpty()) {
             throw new BusinessException(404, "当前没有待签到预约");
         }
@@ -320,18 +376,14 @@ public class AppService {
         if (!Objects.equals(num(r.get("user_id")), user.id())) {
             throw new BusinessException(403, "不能签退他人的预约");
         }
-        if (!"USING".equals(String.valueOf(r.get("status"))) && !"TEMP_LEAVE".equals(String.valueOf(r.get("status")))) {
+        if (!statusIs(r.get("status"), RES_USING, "USING")) {
             throw new BusinessException(409, "当前预约不是使用中");
-        }
-        if ("TEMP_LEAVE".equals(String.valueOf(r.get("status")))) {
-            jdbc.update("update temp_leave set leave_status='RETURNED',return_time=? where reservation_id=? and leave_status='ACTIVE'",
-                    LocalDateTime.now(), id);
         }
         LocalDateTime now = LocalDateTime.now();
         LocalDateTime signIn = toLocalDateTime(r.get("sign_in_time"));
         int minutes = (int) Math.max(0, Duration.between(signIn, now).toMinutes());
-        jdbc.update("update reservation set status='COMPLETED',sign_out_time=?,actual_minutes=?,updated_at=? where id=?",
-                now, minutes, now, id);
+        jdbc.update("update reservation set status=?,sign_out_time=?,updated_at=? where id=?",
+                RES_COMPLETED, now, now, id);
         jdbc.update("update checkin_record set checkout_time=? where reservation_id=?", now, id);
         releaseReservationSlots(id);
         Map<String, Object> summary = reservationDetail(id);
@@ -347,59 +399,60 @@ public class AppService {
 
     public Map<String, Object> myStudyDuration(CurrentUser user, String period) {
         String normalized = period == null || period.isBlank() ? "week" : period;
+        String minutesExpr = durationMinutesExpression("reservation");
         List<Map<String, Object>> rows;
         if ("day".equalsIgnoreCase(normalized)) {
             rows = jdbc.queryForList("""
-                    select hour(sign_in_time) label, sum(actual_minutes) minutes
+                    select hour(sign_in_time) label, sum(%s) minutes
                     from reservation
-                    where user_id=? and status in ('COMPLETED','AUTO_CHECKOUT')
+                    where user_id=? and %s
                       and reserve_date=current_date()
                     group by hour(sign_in_time)
                     order by hour(sign_in_time)
-                    """, user.id());
+                    """.formatted(minutesExpr, usedReservationPredicate("reservation")), user.id());
         } else if ("year".equalsIgnoreCase(normalized)) {
             rows = jdbc.queryForList("""
-                    select date_format(reserve_date,'%Y-%m') label, sum(actual_minutes) minutes
+                    select date_format(reserve_date,'%Y-%m') label, sum(%s) minutes
                     from reservation
-                    where user_id=? and status in ('COMPLETED','AUTO_CHECKOUT')
+                    where user_id=? and %s
                       and reserve_date >= date_sub(current_date(), interval 365 day)
                     group by date_format(reserve_date,'%Y-%m')
                     order by label
-                    """, user.id());
+                    """.formatted(minutesExpr, usedReservationPredicate("reservation")), user.id());
         } else if ("month".equalsIgnoreCase(normalized)) {
             rows = jdbc.queryForList("""
-                    select concat('第', floor((day(reserve_date)-1)/7)+1, '周') label, sum(actual_minutes) minutes
+                    select concat('第', floor((day(reserve_date)-1)/7)+1, '周') label, sum(%s) minutes
                     from reservation
-                    where user_id=? and status in ('COMPLETED','AUTO_CHECKOUT')
+                    where user_id=? and %s
                       and reserve_date between date_sub(current_date(), interval 29 day) and current_date()
                     group by floor((day(reserve_date)-1)/7)
                     order by floor((day(reserve_date)-1)/7)
-                    """, user.id());
+                    """.formatted(minutesExpr, usedReservationPredicate("reservation")), user.id());
         } else {
             int days = 7;
             rows = jdbc.queryForList("""
-                    select reserve_date label, sum(actual_minutes) minutes
+                    select reserve_date label, sum(%s) minutes
                     from reservation
-                    where user_id=? and status in ('COMPLETED','AUTO_CHECKOUT')
+                    where user_id=? and %s
                       and reserve_date between date_sub(current_date(), interval ? day) and current_date()
                     group by reserve_date
                     order by reserve_date
-                    """, user.id(), days - 1);
+                    """.formatted(minutesExpr, usedReservationPredicate("reservation")), user.id(), days - 1);
         }
         int total = rows.stream().mapToInt(r -> intValue(r.get("minutes"))).sum();
         int reservationCount = jdbc.queryForObject("select count(*) from reservation where user_id=?", Integer.class, user.id());
         int checkinCount = jdbc.queryForObject("""
-                select count(*) from checkin_record where user_id=? and result='ON_TIME'
-                """, Integer.class, user.id());
+                select count(*) from checkin_record where user_id=? and result in (?, 'ON_TIME')
+                """, Integer.class, user.id(), CHECKIN_ON_TIME);
         int violationCount = jdbc.queryForObject("""
-                select count(*) from reservation where user_id=? and status in ('VIOLATED','AUTO_CANCELLED')
-                """, Integer.class, user.id());
+                select count(*) from reservation where user_id=? and %s
+                """.formatted(violatedReservationPredicate("reservation")), Integer.class, user.id());
         return Map.of("period", normalized, "totalMinutes", total, "series", rows,
                 "reservationCount", reservationCount, "checkinCount", checkinCount, "violationCount", violationCount);
     }
 
     public List<Map<String, Object>> announcements() {
-        return jdbc.queryForList("select * from announcement where status='PUBLISHED' order by pinned desc,published_at desc,id desc");
+        return jdbc.queryForList("select * from announcement where status in (?, 'PUBLISHED') order by pinned desc,published_at desc,id desc", ANNOUNCEMENT_PUBLISHED);
     }
 
     public void readAnnouncement(Long id) {
@@ -420,13 +473,10 @@ public class AppService {
 
     public Map<String, Object> createFeedback(CurrentUser user, Map<String, Object> req) {
         LocalDateTime now = LocalDateTime.now();
-        String severity = text(req, "severity", "MEDIUM").toUpperCase(Locale.ROOT);
-        if (!Set.of("LOW", "MEDIUM", "HIGH", "CRITICAL").contains(severity)) {
-            severity = "MEDIUM";
-        }
+        String severity = dbFeedbackSeverity(text(req, "severity", FEEDBACK_MEDIUM));
         jdbc.update("insert into feedback_ticket(user_id,reservation_id,room_id,seat_id,type,severity,content,status,created_at) values(?,?,?,?,?,?,?,?,?)",
                 user.id(), nullableLong(req, "reservationId"), nullableLong(req, "roomId"), nullableLong(req, "seatId"),
-                text(req, "type", "SUGGESTION"), severity, text(req, "content"), "PENDING", now);
+                dbFeedbackType(text(req, "type", FEEDBACK_SUGGESTION)), severity, text(req, "content"), FEEDBACK_PENDING, now);
         Long id = jdbc.queryForObject("select last_insert_id()", Long.class);
         return one("select * from feedback_ticket where id=?", id);
     }
@@ -470,9 +520,9 @@ public class AppService {
         return Map.of("ok", true);
     }
 
-    /** 待签到 / 使用中 / 暂离中的实时预约（签到页） */
+    /** 待签到 / 使用中的实时预约（签到页） */
     public List<Map<String, Object>> liveReservations(CurrentUser admin) {
-        String liveWhere = sqlWhereWithRoomScope(admin, "r", "r.status in ('PENDING','USING','TEMP_LEAVE')", null);
+        String liveWhere = sqlWhereWithRoomScope(admin, "r", activeReservationPredicate("r"), null);
         String liveSql = sqlJoin("""
                 select r.id, r.reservation_no reservationNo, r.status, r.reserve_date reserveDate,
                        r.start_time startTime, r.end_time endTime,
@@ -490,8 +540,8 @@ public class AppService {
         StringBuilder sql = new StringBuilder("""
                 select ua.id userId, ua.username, ua.status accountStatus, sp.*
                 from user_account ua join student_profile sp on sp.user_id=ua.id
-                where ua.role='STUDENT'
-                """);
+                where %s
+                """.formatted(studentRolePredicate("ua")));
         if (keyword != null && !keyword.isBlank()) {
             sql.append(" and (ua.username like ? or sp.name like ?)");
             params.add("%" + keyword + "%");
@@ -499,7 +549,7 @@ public class AppService {
         }
         if (auditStatus != null && !auditStatus.isBlank()) {
             sql.append(" and sp.audit_status=?");
-            params.add(auditStatus);
+            params.add(dbAuditStatus(auditStatus));
         }
         sql.append(" order by sp.created_at desc");
         return jdbc.queryForList(sql.toString(), params.toArray());
@@ -540,7 +590,7 @@ public class AppService {
         return switch (status) {
             case "NORMAL" -> "正常";
             case "PENDING" -> "待审核";
-            case "DISABLED" -> "已禁用";
+            case "DISABLED" -> "禁用";
             case "BLACKLIST" -> "黑名单";
             default -> status;
         };
@@ -558,8 +608,8 @@ public class AppService {
     }
 
     public void auditUser(CurrentUser admin, Long id, boolean approve, String remark) {
-        String audit = approve ? "APPROVED" : "REJECTED";
-        String status = approve ? "NORMAL" : "DISABLED";
+        String audit = approve ? AUDIT_APPROVED : AUDIT_REJECTED;
+        String status = approve ? ACCOUNT_NORMAL : ACCOUNT_DISABLED;
         jdbc.update("update student_profile set audit_status=?,audit_remark=?,updated_at=? where user_id=?",
                 audit, remark, LocalDateTime.now(), id);
         jdbc.update("update user_account set status=?,updated_at=? where id=?", status, LocalDateTime.now(), id);
@@ -567,7 +617,7 @@ public class AppService {
     }
 
     public void setUserStatus(Long id, String status) {
-        jdbc.update("update user_account set status=?,updated_at=? where id=?", status, LocalDateTime.now(), id);
+        jdbc.update("update user_account set status=?,updated_at=? where id=?", dbAccountStatus(status), LocalDateTime.now(), id);
     }
 
     @Transactional
@@ -596,28 +646,30 @@ public class AppService {
         }
         int rows = Math.max(1, intText(req, "rowCount", 4));
         int cols = Math.max(1, intText(req, "colCount", 6));
-        int seats = rows * cols;
         LocalDateTime now = LocalDateTime.now();
         if (creating) {
-            String code = text(req, "roomCode", "ROOM-" + System.currentTimeMillis());
+            String code = normalizeRoomCode(text(req, "roomCode", "ROOM" + System.currentTimeMillis()));
             jdbc.update("""
-                    insert into study_room(room_code,name,location,floor,open_time,close_time,status,manager_id,row_count,col_count,cell_count,seat_count,facilities,layout_image_url,created_at,updated_at)
-                    values(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                    """, code, text(req, "name"), text(req, "location"), text(req, "floor", "1楼"),
-                    text(req, "openTime", "07:00:00"), text(req, "closeTime", "22:30:00"), text(req, "status", "OPEN"),
-                    managerId, rows, cols, seats, seats, text(req, "facilities", "空调,WiFi"), text(req, "layoutImageUrl", ""), now, now);
+                    insert into study_room(room_code,name,room_type,location,floor,open_time,close_time,status,manager_id,row_count,col_count,layout_image_url,created_at,updated_at)
+                    values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                    """, code, text(req, "name"), dbRoomType(text(req, "roomType", "普通")), text(req, "location"), text(req, "floor", "1楼"),
+                    text(req, "openTime", "07:00:00"), text(req, "closeTime", "22:30:00"), dbRoomStatus(text(req, "status", ROOM_OPEN)),
+                    managerId, rows, cols, text(req, "layoutImageUrl", ""), now, now);
             id = jdbc.queryForObject("select id from study_room where room_code=?", Long.class, code);
+            replaceRoomFacilities(id, text(req, "facilities", "空调,WiFi"));
             recreateSeats(id, rows, cols, "N");
         } else {
             Map<String, Object> before = room(id);
             int oldRows = intValue(before.get("row_count"));
             int oldCols = intValue(before.get("col_count"));
             jdbc.update("""
-                    update study_room set name=?,location=?,floor=?,open_time=?,close_time=?,status=?,manager_id=?,row_count=?,col_count=?,cell_count=?,seat_count=?,facilities=?,layout_image_url=?,updated_at=?
+                    update study_room set name=?,room_type=?,location=?,floor=?,open_time=?,close_time=?,status=?,manager_id=?,row_count=?,col_count=?,layout_image_url=?,updated_at=?
                     where id=?
-                    """, text(req, "name"), text(req, "location"), text(req, "floor", "1楼"),
-                    text(req, "openTime", "07:00:00"), text(req, "closeTime", "22:30:00"), text(req, "status", "OPEN"),
-                    managerId, rows, cols, seats, seats, text(req, "facilities", "空调,WiFi"), text(req, "layoutImageUrl", ""), now, id);
+                    """, text(req, "name"), dbRoomType(text(req, "roomType", String.valueOf(before.getOrDefault("room_type", "普通")))),
+                    text(req, "location"), text(req, "floor", "1楼"),
+                    text(req, "openTime", "07:00:00"), text(req, "closeTime", "22:30:00"), dbRoomStatus(text(req, "status", ROOM_OPEN)),
+                    managerId, rows, cols, text(req, "layoutImageUrl", ""), now, id);
+            replaceRoomFacilities(id, text(req, "facilities", String.valueOf(before.getOrDefault("facilities", "空调,WiFi"))));
             if (oldRows != rows || oldCols != cols) {
                 syncRoomSeatGrid(id, rows, cols, String.valueOf(before.get("room_code")));
             }
@@ -631,10 +683,12 @@ public class AppService {
             throw new BusinessException(403, "仅超级管理员可删除自习室");
         }
         Map<String, Object> roomInfo = room(id);
-        Integer pending = jdbc.queryForObject("select count(*) from reservation where room_id=? and status in ('PENDING','USING','TEMP_LEAVE')", Integer.class, id);
-        if (pending != null && pending > 0) {
-            throw new BusinessException(409, "该自习室有未完成预约，不能删除");
+        Integer reservationCount = jdbc.queryForObject("select count(*) from reservation where room_id=?", Integer.class, id);
+        Integer feedbackCount = jdbc.queryForObject("select count(*) from feedback_ticket where room_id=?", Integer.class, id);
+        if ((reservationCount != null && reservationCount > 0) || (feedbackCount != null && feedbackCount > 0)) {
+            throw new BusinessException(409, "该自习室存在历史预约或反馈，不能删除；请改为维护状态");
         }
+        jdbc.update("delete from study_room_facility where room_id=?", id);
         jdbc.update("delete from seat where room_id=?", id);
         jdbc.update("delete from study_room where id=?", id);
         writeOperationLog(admin, "ROOM", "DELETE", "STUDY_ROOM", id, String.valueOf(roomInfo.get("name")));
@@ -649,9 +703,9 @@ public class AppService {
         jdbc.update("""
                 update seat set is_seat=?,cell_category=?,seat_type=?,has_power=?,near_window=?,quiet_zone=?,hot_seat=?,status=?,updated_at=?
                 where id=?
-                """, intText(req, "isSeat", 1), text(req, "cellCategory", "SEAT"), text(req, "seatType", "普通座位"),
+                """, intText(req, "isSeat", 1), dbCellCategory(text(req, "cellCategory", "座位")), dbSeatType(text(req, "seatType", "普通")),
                 intText(req, "hasPower", 0), intText(req, "nearWindow", 0), intText(req, "quietZone", 0),
-                intText(req, "hotSeat", 0), text(req, "status", "NORMAL"), LocalDateTime.now(), id);
+                intText(req, "hotSeat", 0), dbSeatStatus(text(req, "status", SEAT_NORMAL)), LocalDateTime.now(), id);
     }
 
     @Transactional
@@ -665,25 +719,24 @@ public class AppService {
         int nextIndex = count + 1;
         if (nextIndex > rows * cols) {
             cols += 1;
-            jdbc.update("update study_room set col_count=?,cell_count=?,seat_count=?,updated_at=? where id=?",
-                    cols, rows * cols, rows * cols, LocalDateTime.now(), roomId);
+            jdbc.update("update study_room set col_count=?,updated_at=? where id=?",
+                    cols, LocalDateTime.now(), roomId);
         }
         int rowNo = ((nextIndex - 1) / cols) + 1;
         int colNo = ((nextIndex - 1) % cols) + 1;
         String prefix = String.valueOf(roomInfo.get("room_code")).replaceAll("[^A-Za-z0-9]", "");
         if (prefix.isBlank()) {
-            prefix = "S";
+            prefix = "A";
         }
-        String seatNo = prefix + "-" + String.format("%02d", nextIndex);
+        prefix = prefix.substring(0, 1).toUpperCase(Locale.ROOT);
+        String seatNo = prefix + "-" + String.format("%03d", nextIndex);
         LocalDateTime now = LocalDateTime.now();
         jdbc.update("""
                 insert into seat(room_id,seat_no,row_no,col_no,is_seat,cell_category,seat_type,has_power,near_window,quiet_zone,hot_seat,status,created_at,updated_at)
                 values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                """, roomId, seatNo, rowNo, colNo, 1, "SEAT", "普通座位", colNo % 2 == 0 ? 1 : 0,
-                colNo == 1 || colNo == cols ? 1 : 0, rowNo <= 2 ? 1 : 0, 0, "NORMAL", now, now);
+                """, roomId, seatNo, rowNo, colNo, 1, "座位", rowNo <= 2 ? "静音" : "普通", colNo % 2 == 0 ? 1 : 0,
+                colNo == 1 || colNo == cols ? 1 : 0, rowNo <= 2 ? 1 : 0, 0, SEAT_NORMAL, now, now);
         Long seatId = jdbc.queryForObject("select id from seat where room_id=? and seat_no=? order by id desc limit 1", Long.class, roomId, seatNo);
-        jdbc.update("update study_room set seat_count=(select count(*) from seat where room_id=? and is_seat=1), updated_at=? where id=?",
-                roomId, now, roomId);
         writeOperationLog(admin, "SEAT", "CREATE", "SEAT", seatId, seatNo);
         return one("select * from seat where id=?", seatId);
     }
@@ -699,15 +752,13 @@ public class AppService {
         }
         Integer active = jdbc.queryForObject("""
                 select count(*) from reservation r
-                where r.seat_id=? and r.status in ('PENDING','USING','TEMP_LEAVE')
+                where r.seat_id=?
                 """, Integer.class, seatId);
-        if (active != null && active > 0) {
-            throw new BusinessException(409, "该座位存在进行中的预约，无法删除");
+        Integer feedback = jdbc.queryForObject("select count(*) from feedback_ticket where seat_id=?", Integer.class, seatId);
+        if ((active != null && active > 0) || (feedback != null && feedback > 0)) {
+            throw new BusinessException(409, "该座位存在历史预约或反馈，无法删除；请改为停用状态");
         }
-        Long roomId = num(seat.get("room_id"));
         jdbc.update("delete from seat where id=?", seatId);
-        jdbc.update("update study_room set seat_count=(select count(*) from seat where room_id=? and is_seat=1), updated_at=? where id=?",
-                roomId, LocalDateTime.now(), roomId);
         writeOperationLog(admin, "SEAT", "DELETE", "SEAT", seatId, String.valueOf(seat.get("seat_no")));
     }
 
@@ -721,8 +772,8 @@ public class AppService {
     public void batchSeats(CurrentUser admin, Long roomId, Map<String, Object> req) {
         assertRoomManager(admin, roomId);
         jdbc.update("update seat set seat_type=?,has_power=?,near_window=?,quiet_zone=?,hot_seat=?,status=?,updated_at=? where room_id=?",
-                text(req, "seatType", "普通座位"), intText(req, "hasPower", 0), intText(req, "nearWindow", 0),
-                intText(req, "quietZone", 0), intText(req, "hotSeat", 0), text(req, "status", "NORMAL"), LocalDateTime.now(), roomId);
+                dbSeatType(text(req, "seatType", "普通")), intText(req, "hasPower", 0), intText(req, "nearWindow", 0),
+                intText(req, "quietZone", 0), intText(req, "hotSeat", 0), dbSeatStatus(text(req, "status", SEAT_NORMAL)), LocalDateTime.now(), roomId);
     }
 
     public List<Map<String, Object>> adminReservations(CurrentUser admin) {
@@ -742,7 +793,7 @@ public class AppService {
     public Map<String, Object> revokeViolation(CurrentUser admin, Long reservationId, String remark) {
         Map<String, Object> r = reservationDetail(reservationId);
         String status = String.valueOf(r.get("status"));
-        if (!"VIOLATED".equals(status) && !"AUTO_CANCELLED".equals(status)) {
+        if (!statusIs(status, RES_VIOLATED, "VIOLATED", "AUTO_CANCELLED")) {
             throw new BusinessException(409, "仅违约或超时取消的预约可撤销");
         }
         String cancelReason = String.valueOf(r.get("cancel_reason"));
@@ -750,8 +801,8 @@ public class AppService {
             throw new BusinessException(409, "该违约记录已撤销");
         }
         Integer revoked = jdbc.queryForObject(
-                "select count(*) from credit_log where reservation_id=? and change_type='VIOLATION_REVOKE'",
-                Integer.class, reservationId);
+                "select count(*) from credit_log where reservation_id=? and change_type=? and reason like '管理员撤销违约%'",
+                Integer.class, reservationId, CREDIT_SYSTEM_RESTORE);
         if (revoked != null && revoked > 0) {
             throw new BusinessException(409, "该违约惩罚已撤销");
         }
@@ -763,27 +814,26 @@ public class AppService {
         List<Map<String, Object>> penalties = jdbc.queryForList("""
                 select change_value, change_type from credit_log
                 where reservation_id=? and change_value < 0
-                  and change_type not in ('USER_CANCEL','INVALID_CHECKIN_REVERT')
                 order by created_at asc
                 """, reservationId);
         int restore = penalties.stream().mapToInt(p -> Math.abs(intValue(p.get("change_value")))).sum();
-        if (restore == 0 && "VIOLATED".equals(status)) {
+        if (restore == 0 && statusIs(status, RES_VIOLATED, "VIOLATED")) {
             restore = 50;
         }
         if (restore > 0) {
             String reason = remark == null || remark.isBlank() ? "管理员撤销违约惩罚" : "管理员撤销违约：" + remark.trim();
-            changeCredit(userId, restore, "VIOLATION_REVOKE", reason, reservationId);
+            changeCredit(userId, restore, CREDIT_SYSTEM_RESTORE, reason, reservationId);
         }
         String detail = remark == null || remark.isBlank() ? "管理员撤销违约" : "管理员撤销违约：" + remark.trim();
-        jdbc.update("update reservation set status='CANCELLED',cancel_reason=?,updated_at=? where id=?",
-                detail, LocalDateTime.now(), reservationId);
+        jdbc.update("update reservation set status=?,cancel_reason=?,updated_at=? where id=?",
+                RES_CANCELLED, detail, LocalDateTime.now(), reservationId);
         Map<String, Object> account = one("select status from user_account where id=?", userId);
-        if (account != null && "BLACKLIST".equals(String.valueOf(account.get("status")))) {
+        if (account != null && statusIs(account.get("status"), ACCOUNT_BLACKLIST, "BLACKLIST")) {
             Map<String, Object> profile = one("select credit_score from student_profile where user_id=?", userId);
             if (profile != null && intValue(profile.get("credit_score")) > 0) {
-                jdbc.update("update user_account set status='NORMAL',updated_at=? where id=?", LocalDateTime.now(), userId);
-                jdbc.update("update blacklist_record set status='RELEASED',released_at=? where user_id=? and status='ACTIVE'",
-                        LocalDateTime.now(), userId);
+                jdbc.update("update user_account set status=?,updated_at=? where id=?", ACCOUNT_NORMAL, LocalDateTime.now(), userId);
+                jdbc.update("update blacklist_record set status=?,released_at=? where user_id=? and status in (?, 'ACTIVE')",
+                        BLACKLIST_RELEASED, LocalDateTime.now(), userId, BLACKLIST_ACTIVE);
             }
         }
         writeOperationLog(admin, "RESERVATION", "REVOKE_VIOLATION", "RESERVATION", reservationId,
@@ -800,7 +850,7 @@ public class AppService {
         String token = text(req, "qrToken", "");
         Long userId = nullableLong(req, "userId");
         Long reservationId = nullableLong(req, "reservationId");
-        String checkinMethod = "QR_SCAN";
+        String checkinMethod = CHECKIN_QR;
 
         if (!studentNo.isBlank()) {
             Map<String, Object> profile = one("""
@@ -812,12 +862,12 @@ public class AppService {
             if (profile == null) {
                 throw new BusinessException(404, "学号不存在：" + studentNo);
             }
-            if (!"APPROVED".equals(String.valueOf(profile.get("audit_status")))) {
+            if (!statusIs(profile.get("audit_status"), AUDIT_APPROVED, "APPROVED")) {
                 throw new BusinessException(403, "该学号注册尚未通过审核");
             }
             userId = num(profile.get("user_id"));
             reservationId = null;
-            checkinMethod = "STUDENT_NO";
+            checkinMethod = CHECKIN_STUDENT_NO;
         } else if (!token.isBlank()) {
             try {
                 String decoded = new String(Base64.getUrlDecoder().decode(token), StandardCharsets.UTF_8);
@@ -840,12 +890,7 @@ public class AppService {
         }
         Map<String, Object> r = reservationId != null && reservationId > 0
                 ? reservationDetail(reservationId)
-                : one("""
-                        select * from reservation
-                        where user_id=? and status='PENDING'
-                        order by reserve_date desc, start_time desc, id desc
-                        limit 1
-                        """, userId);
+                : currentPendingReservationForCheckin(userId);
         if (r == null) {
             throw new BusinessException(404, "该学生当前没有待签到的预约");
         }
@@ -853,7 +898,7 @@ public class AppService {
         if (!admin.isSuperAdmin() && !Objects.equals(num(room.get("manager_id")), admin.id())) {
             throw new BusinessException(403, "无权限为该自习室签到，请使用 superadmin 或该自习室管理员账号");
         }
-        if (!"PENDING".equals(String.valueOf(r.get("status")))) {
+        if (!statusIs(r.get("status"), RES_PENDING, "PENDING")) {
             throw new BusinessException(409, "该预约不能签到");
         }
         ensureWithinCheckinWindow(r);
@@ -861,10 +906,10 @@ public class AppService {
         Long rid = num(r.get("id"));
         Long uid = num(r.get("user_id"));
         jdbc.update("delete from checkin_record where reservation_id=?", rid);
-        jdbc.update("update reservation set status='USING',sign_in_time=?,updated_at=? where id=?", now, now, rid);
+        jdbc.update("update reservation set status=?,sign_in_time=?,updated_at=? where id=?", RES_USING, now, now, rid);
         jdbc.update("insert into checkin_record(reservation_id,user_id,admin_id,checkin_method,checkin_time,result) values(?,?,?,?,?,?)",
-                rid, uid, admin.id(), checkinMethod, now, "ON_TIME");
-        changeCredit(uid, 5, "ON_TIME_CHECKIN", "准时签到奖励", rid);
+                rid, uid, admin.id(), checkinMethod, now, CHECKIN_ON_TIME);
+        changeCredit(uid, 5, CREDIT_ON_TIME, "准时签到奖励", rid);
         return reservationDetail(rid);
     }
 
@@ -884,19 +929,19 @@ public class AppService {
         LocalDateTime now = LocalDateTime.now();
         if (id == null) {
             jdbc.update("insert into announcement(title,content,type,pinned,scope,room_id,publisher_id,status,published_at,created_at,updated_at) values(?,?,?,?,?,?,?,?,?,?,?)",
-                    text(req, "title"), text(req, "content"), text(req, "type", "SYSTEM"), intText(req, "pinned", 0),
-                    text(req, "scope", "GLOBAL"), nullableLong(req, "roomId"), admin.id(), text(req, "status", "PUBLISHED"), now, now, now);
+                    text(req, "title"), text(req, "content"), dbAnnouncementType(text(req, "type", ANNOUNCEMENT_SYSTEM)), intText(req, "pinned", 0),
+                    text(req, "scope", "全体"), nullableLong(req, "roomId"), admin.id(), dbAnnouncementStatus(text(req, "status", ANNOUNCEMENT_PUBLISHED)), now, now, now);
             id = jdbc.queryForObject("select last_insert_id()", Long.class);
         } else {
             jdbc.update("update announcement set title=?,content=?,type=?,pinned=?,scope=?,room_id=?,status=?,updated_at=? where id=?",
-                    text(req, "title"), text(req, "content"), text(req, "type", "SYSTEM"), intText(req, "pinned", 0),
-                    text(req, "scope", "GLOBAL"), nullableLong(req, "roomId"), text(req, "status", "PUBLISHED"), now, id);
+                    text(req, "title"), text(req, "content"), dbAnnouncementType(text(req, "type", ANNOUNCEMENT_SYSTEM)), intText(req, "pinned", 0),
+                    text(req, "scope", "全体"), nullableLong(req, "roomId"), dbAnnouncementStatus(text(req, "status", ANNOUNCEMENT_PUBLISHED)), now, id);
         }
         return one("select * from announcement where id=?", id);
     }
 
     public void deleteAnnouncement(Long id) {
-        jdbc.update("update announcement set status='DELETED',updated_at=? where id=?", LocalDateTime.now(), id);
+        jdbc.update("update announcement set status='已删除',updated_at=? where id=?", LocalDateTime.now(), id);
     }
 
     public List<Map<String, Object>> statisticsUsage(CurrentUser admin, String period) {
@@ -912,12 +957,16 @@ public class AppService {
         String dateJoin = reservationDateJoinCondition(period, rangeMode);
         String joinOn = sqlJoin("r.room_id=sr.id", "and", dateJoin);
         String usageSql = sqlJoin("""
-                select sr.name roomName, sr.seat_count seatCount,
-                  count(r.id) reservationCount,
-                  sum(case when r.status in ('USING','COMPLETED','AUTO_CHECKOUT') then 1 else 0 end) usedCount,
-                  round(if(sr.seat_count=0,0,count(r.id)/sr.seat_count*100),1) usageRate
-                from study_room sr left join reservation r on""", joinOn, extra,
-                "group by sr.id,sr.name,sr.seat_count", "order by sr.id");
+                select sr.name roomName,
+                  count(distinct case when s.is_seat=1 then s.id end) seatCount,
+                  count(distinct r.id) reservationCount,
+                  count(distinct case when %s then r.id end) usedCount,
+                  round(if(count(distinct case when s.is_seat=1 then s.id end)=0,0,
+                    count(distinct r.id)/count(distinct case when s.is_seat=1 then s.id end)*100),1) usageRate
+                from study_room sr
+                left join seat s on s.room_id=sr.id
+                left join reservation r on""".formatted(usedReservationPredicate("r")), joinOn, extra,
+                "group by sr.id,sr.name", "order by sr.id");
         return jdbc.queryForList(usageSql);
     }
 
@@ -1007,9 +1056,9 @@ public class AppService {
         String countFrom = "select count(*) from reservation r join study_room sr on sr.id=r.room_id";
         Integer totalReserve = jdbc.queryForObject(sqlJoin(countFrom, whereClause), Integer.class);
         Integer usingCount = jdbc.queryForObject(
-                sqlJoin(countFrom, whereClause, "and r.status in ('USING','TEMP_LEAVE')"), Integer.class);
+                sqlJoin(countFrom, whereClause, "and", usingReservationPredicate("r")), Integer.class);
         Integer checkedIn = jdbc.queryForObject(
-                sqlJoin(countFrom, whereClause, "and r.status in ('USING','COMPLETED','AUTO_CHECKOUT','TEMP_LEAVE')"),
+                sqlJoin(countFrom, whereClause, "and", usedReservationPredicate("r")),
                 Integer.class);
         int total = totalReserve == null ? 0 : totalReserve;
         int checked = checkedIn == null ? 0 : checkedIn;
@@ -1121,7 +1170,7 @@ public class AppService {
         if (ticket == null) {
             throw new BusinessException(404, "反馈不存在");
         }
-        if ("DONE".equals(String.valueOf(ticket.get("status"))) || "CLOSED".equals(String.valueOf(ticket.get("status")))) {
+        if (statusIs(ticket.get("status"), FEEDBACK_DONE, "DONE", "CLOSED")) {
             throw new BusinessException(409, "该反馈已处理完成");
         }
         String result = text(req, "handleResult", "已处理并记录");
@@ -1129,7 +1178,7 @@ public class AppService {
             throw new BusinessException(400, "请填写处理说明");
         }
         jdbc.update("update feedback_ticket set status=?,handler_id=?,handle_result=?,handled_at=? where id=?",
-                text(req, "status", "DONE"), admin.id(), result, LocalDateTime.now(), id);
+                dbFeedbackStatus(text(req, "status", FEEDBACK_DONE)), admin.id(), result, LocalDateTime.now(), id);
         Long studentId = num(ticket.get("user_id"));
         notifyUser(studentId, "反馈已处理", "你提交的问题反馈已由管理员处理：" + result, "FEEDBACK", id);
         writeOperationLog(admin, "FEEDBACK", "HANDLE", "FEEDBACK", id, result);
@@ -1144,51 +1193,12 @@ public class AppService {
                 text(req, "gender", "男"),
                 text(req, "college"),
                 text(req, "major"),
-                text(req, "grade"),
+                normalizeGrade(text(req, "grade")),
                 text(req, "phone"),
                 text(req, "email"),
                 LocalDateTime.now(),
                 user.id());
         return studentInfo(user);
-    }
-
-    @Transactional
-    public Map<String, Object> startTempLeave(CurrentUser user, Long reservationId) {
-        Map<String, Object> r = reservationDetail(reservationId);
-        if (!Objects.equals(num(r.get("user_id")), user.id())) {
-            throw new BusinessException(403, "不能操作他人的预约");
-        }
-        if (!"USING".equals(String.valueOf(r.get("status")))) {
-            throw new BusinessException(409, "只有使用中的预约可以暂离");
-        }
-        Integer active = jdbc.queryForObject(
-                "select count(*) from temp_leave where reservation_id=? and leave_status='ACTIVE'", Integer.class, reservationId);
-        if (active != null && active > 0) {
-            throw new BusinessException(409, "当前已在暂离中");
-        }
-        LocalDateTime now = LocalDateTime.now();
-        jdbc.update("insert into temp_leave(reservation_id,user_id,leave_time,leave_status,max_leave_minutes,created_at) values(?,?,?,?,?,?)",
-                reservationId, user.id(), now, "ACTIVE", 30, now);
-        jdbc.update("update reservation set status='TEMP_LEAVE',updated_at=? where id=?", now, reservationId);
-        notifyUser(user.id(), "暂离开始", "你已暂离座位，请在 30 分钟内返回，超时将自动签退并扣分。", "TEMP_LEAVE", reservationId);
-        return reservationDetail(reservationId);
-    }
-
-    @Transactional
-    public Map<String, Object> endTempLeave(CurrentUser user, Long reservationId) {
-        Map<String, Object> r = reservationDetail(reservationId);
-        if (!Objects.equals(num(r.get("user_id")), user.id())) {
-            throw new BusinessException(403, "不能操作他人的预约");
-        }
-        if (!"TEMP_LEAVE".equals(String.valueOf(r.get("status")))) {
-            throw new BusinessException(409, "当前预约不在暂离状态");
-        }
-        LocalDateTime now = LocalDateTime.now();
-        jdbc.update("update temp_leave set leave_status='RETURNED',return_time=? where reservation_id=? and leave_status='ACTIVE'",
-                now, reservationId);
-        jdbc.update("update reservation set status='USING',updated_at=? where id=?", now, reservationId);
-        notifyUser(user.id(), "暂离结束", "你已返回座位，请继续学习并在结束时签退。", "TEMP_LEAVE", reservationId);
-        return reservationDetail(reservationId);
     }
 
     public List<Map<String, Object>> operationLogs(CurrentUser admin) {
@@ -1199,16 +1209,20 @@ public class AppService {
     }
 
     public List<Map<String, Object>> adminAccounts(CurrentUser admin) {
+        List<Map<String, Object>> rows;
         if (!admin.isSuperAdmin()) {
-            return List.of(one("select id,account,name,role,phone,status from admin_account where id=?", admin.id()));
+            rows = List.of(one("select id,account,name,role,phone,status from admin_account where id=?", admin.id()));
+        } else {
+            rows = jdbc.queryForList("""
+                    select aa.id, aa.account, aa.name, aa.role, aa.phone, aa.status,
+                           (select group_concat(sr.name separator '、') from study_room sr where sr.manager_id=aa.id) managedRooms
+                    from admin_account aa
+                    where %s
+                    order by aa.id
+                    """.formatted(adminRolePredicate("aa")));
         }
-        return jdbc.queryForList("""
-                select aa.id, aa.account, aa.name, aa.role, aa.phone, aa.status,
-                       (select group_concat(sr.name separator '、') from study_room sr where sr.manager_id=aa.id) managedRooms
-                from admin_account aa
-                where aa.role in ('ADMIN','SUPER_ADMIN')
-                order by aa.id
-                """);
+        rows.forEach(this::decorateAdminAccount);
+        return rows;
     }
 
     /** 超级管理员：新增图书馆管理员账号 */
@@ -1225,10 +1239,9 @@ public class AppService {
         if (exists != null && exists > 0) {
             throw new BusinessException(409, "管理员账号已存在");
         }
-        String role = "ADMIN";
         LocalDateTime now = LocalDateTime.now();
         jdbc.update("insert into admin_account(account,password_hash,name,role,phone,status,created_at,updated_at) values(?,?,?,?,?,?,?,?)",
-                account, passwordEncoder.encode(password), name, role, text(req, "phone"), "NORMAL", now, now);
+                account, passwordEncoder.encode(password), name, ROLE_ADMIN_DB, text(req, "phone"), ADMIN_NORMAL, now, now);
         Long id = jdbc.queryForObject("select id from admin_account where account=?", Long.class, account);
         writeOperationLog(admin, "ADMIN", "CREATE", "ADMIN_ACCOUNT", id, account);
         return one("select id,account,name,role,phone,status from admin_account where id=?", id);
@@ -1243,7 +1256,7 @@ public class AppService {
         }
         String existingRole = String.valueOf(target.get("role"));
         // 接口仅维护普通图书馆管理员；不可通过此接口新增或提升为超级管理员
-        String role = "SUPER_ADMIN".equals(existingRole) ? "SUPER_ADMIN" : "ADMIN";
+        String role = statusIs(existingRole, ROLE_SUPER_ADMIN_DB, "SUPER_ADMIN") ? ROLE_SUPER_ADMIN_DB : ROLE_ADMIN_DB;
         LocalDateTime now = LocalDateTime.now();
         jdbc.update("update admin_account set name=?,role=?,phone=?,updated_at=? where id=?",
                 text(req, "name", String.valueOf(target.get("name"))), role,
@@ -1263,11 +1276,12 @@ public class AppService {
         if (Objects.equals(id, admin.id())) {
             throw new BusinessException(400, "不能禁用当前登录账号");
         }
-        if (!Set.of("NORMAL", "DISABLED").contains(status)) {
+        if (!Set.of("NORMAL", "DISABLED", ADMIN_NORMAL, ADMIN_LEFT).contains(status)) {
             throw new BusinessException(400, "无效状态");
         }
-        jdbc.update("update admin_account set status=?,updated_at=? where id=?", status, LocalDateTime.now(), id);
-        writeOperationLog(admin, "ADMIN", "NORMAL".equals(status) ? "ENABLE" : "DISABLE", "ADMIN_ACCOUNT", id, status);
+        String dbStatus = dbAdminStatus(status);
+        jdbc.update("update admin_account set status=?,updated_at=? where id=?", dbStatus, LocalDateTime.now(), id);
+        writeOperationLog(admin, "ADMIN", ADMIN_NORMAL.equals(dbStatus) ? "ENABLE" : "DISABLE", "ADMIN_ACCOUNT", id, dbStatus);
     }
 
     private void requireSuperAdmin(CurrentUser admin) {
@@ -1279,8 +1293,8 @@ public class AppService {
     public void scheduledProcessInvalidCheckin() {
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 select id, user_id, reserve_date, start_time, end_time, sign_in_time
-                from reservation where status in ('USING','TEMP_LEAVE')
-                """);
+                from reservation where %s
+                """.formatted(usingReservationPredicate("reservation")));
         for (Map<String, Object> row : rows) {
             LocalDateTime signIn = toLocalDateTime(row.get("sign_in_time"));
             if (signIn == null || !isWithinCheckinWindow(row, signIn)) {
@@ -1292,8 +1306,8 @@ public class AppService {
     public void scheduledProcessNoShow() {
         LocalDateTime deadline = LocalDateTime.now().minusMinutes(15);
         List<Map<String, Object>> rows = jdbc.queryForList("""
-                select id,user_id,reserve_date,start_time from reservation where status='PENDING'
-                """);
+                select id,user_id,reserve_date,start_time from reservation where %s
+                """.formatted(pendingReservationPredicate("reservation")));
         for (Map<String, Object> row : rows) {
             LocalDateTime startAt = LocalDateTime.of(
                     ((Date) row.get("reserve_date")).toLocalDate(),
@@ -1303,10 +1317,10 @@ public class AppService {
             }
             Long id = num(row.get("id"));
             Long userId = num(row.get("user_id"));
-            jdbc.update("update reservation set status='VIOLATED',cancel_reason='超时未签到',updated_at=? where id=? and status='PENDING'",
-                    LocalDateTime.now(), id);
+            jdbc.update("update reservation set status=?,cancel_reason='超时未签到',updated_at=? where id=? and status in ('" + RES_PENDING + "','PENDING')",
+                    RES_VIOLATED, LocalDateTime.now(), id);
             releaseReservationSlots(id);
-            changeCredit(userId, -50, "NO_SHOW", "预约超时未签到", id);
+            changeCredit(userId, -50, CREDIT_VIOLATION, "预约超时未签到", id);
             notifyUser(userId, "预约违约", "你有一条预约因超时未签到被判定违约，已扣除 50 信用分。", "VIOLATION", id);
         }
     }
@@ -1314,50 +1328,30 @@ public class AppService {
     public void scheduledProcessAutoCheckout() {
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 select id,user_id,sign_in_time,reserve_date,end_time from reservation
-                where status in ('USING','TEMP_LEAVE')
-                  and timestamp(reserve_date,end_time) < now()
-                """);
+                where status in (?, 'USING')
+                """, RES_USING);
         for (Map<String, Object> row : rows) {
+            LocalDateTime endAt = LocalDateTime.of(((Date) row.get("reserve_date")).toLocalDate(), ((Time) row.get("end_time")).toLocalTime());
+            if (!endAt.isBefore(LocalDateTime.now())) {
+                continue;
+            }
             autoCheckoutReservation(num(row.get("id")), num(row.get("user_id")), toLocalDateTime(row.get("sign_in_time")),
-                    LocalDateTime.of(((Date) row.get("reserve_date")).toLocalDate(), ((Time) row.get("end_time")).toLocalTime()),
-                    "AUTO_CHECKOUT", "预约时段结束，系统已自动签退");
+                    endAt, RES_COMPLETED, "预约时段结束，系统已自动签退");
         }
     }
 
     public void scheduledProcessBlacklistRelease() {
         List<Map<String, Object>> rows = jdbc.queryForList("""
-                select user_id,id from blacklist_record where status='ACTIVE' and end_time <= ?
-                """, LocalDateTime.now());
+                select user_id,id from blacklist_record where status in (?, 'ACTIVE') and end_time <= ?
+                """, BLACKLIST_ACTIVE, LocalDateTime.now());
         for (Map<String, Object> row : rows) {
             Long userId = num(row.get("user_id"));
-            jdbc.update("update blacklist_record set status='RELEASED',released_at=? where id=?", LocalDateTime.now(), row.get("id"));
-            jdbc.update("update user_account set status='NORMAL',updated_at=? where id=?", LocalDateTime.now(), userId);
+            jdbc.update("update blacklist_record set status=?,released_at=? where id=?", BLACKLIST_RELEASED, LocalDateTime.now(), row.get("id"));
+            jdbc.update("update user_account set status=?,updated_at=? where id=?", ACCOUNT_NORMAL, LocalDateTime.now(), userId);
             jdbc.update("update student_profile set credit_score=10,updated_at=? where user_id=?", LocalDateTime.now(), userId);
             jdbc.update("insert into credit_log(user_id,before_score,change_value,after_score,change_type,reason,created_at) values(?,?,?,?,?,?,?)",
-                    userId, 0, 10, 10, "BLACKLIST_RELEASE", "黑名单解除，积分恢复为 10", LocalDateTime.now());
+                    userId, 0, 10, 10, CREDIT_SYSTEM_RESTORE, "黑名单解除，积分恢复为 10", LocalDateTime.now());
             notifyUser(userId, "黑名单解除", "你的黑名单已到期，账号已恢复，信用积分重置为 10 分。", "BLACKLIST", num(row.get("id")));
-        }
-    }
-
-    public void scheduledProcessTempLeaveTimeout() {
-        List<Map<String, Object>> rows = jdbc.queryForList("""
-                select tl.reservation_id,tl.user_id,r.sign_in_time,r.reserve_date,r.end_time
-                from temp_leave tl
-                join reservation r on r.id=tl.reservation_id
-                where tl.leave_status='ACTIVE'
-                  and tl.leave_time < date_sub(now(), interval tl.max_leave_minutes minute)
-                  and r.status='TEMP_LEAVE'
-                """);
-        for (Map<String, Object> row : rows) {
-            Long reservationId = num(row.get("reservation_id"));
-            Long userId = num(row.get("user_id"));
-            jdbc.update("update temp_leave set leave_status='TIMEOUT',return_time=? where reservation_id=? and leave_status='ACTIVE'",
-                    LocalDateTime.now(), reservationId);
-            LocalDateTime endAt = LocalDateTime.of(((Date) row.get("reserve_date")).toLocalDate(), ((Time) row.get("end_time")).toLocalTime());
-            autoCheckoutReservation(reservationId, userId, toLocalDateTime(row.get("sign_in_time")), endAt.isBefore(LocalDateTime.now()) ? endAt : LocalDateTime.now(),
-                    "AUTO_CHECKOUT", "暂离超时，系统已自动签退");
-            changeCredit(userId, -30, "TEMP_LEAVE_TIMEOUT", "暂离超时", reservationId);
-            notifyUser(userId, "暂离超时", "暂离超过 30 分钟，系统已自动签退并扣除 30 信用分。", "TEMP_LEAVE", reservationId);
         }
     }
 
@@ -1426,24 +1420,36 @@ public class AppService {
                 end.format(CHECKIN_WINDOW_FMT)));
     }
 
+    private Map<String, Object> currentPendingReservationForCheckin(Long userId) {
+        List<Map<String, Object>> rows = jdbc.queryForList("""
+                select * from reservation
+                where user_id=? and %s
+                order by reserve_date, start_time, id
+                """.formatted(pendingReservationPredicate("reservation")), userId);
+        LocalDateTime now = LocalDateTime.now();
+        for (Map<String, Object> row : rows) {
+            if (isWithinCheckinWindow(row, now)) {
+                return row;
+            }
+        }
+        return rows.isEmpty() ? null : rows.get(0);
+    }
+
     private void revertInvalidCheckin(Long reservationId, Long userId) {
         jdbc.update("delete from checkin_record where reservation_id=?", reservationId);
-        jdbc.update("update temp_leave set leave_status='CANCELLED',return_time=? where reservation_id=? and leave_status='ACTIVE'",
-                LocalDateTime.now(), reservationId);
         int updated = jdbc.update(
-                "update reservation set status='PENDING',sign_in_time=null,updated_at=? where id=? and status in ('USING','TEMP_LEAVE')",
-                LocalDateTime.now(), reservationId);
+                "update reservation set status=?,sign_in_time=null,updated_at=? where id=? and status in ('" + RES_USING + "','USING')",
+                RES_PENDING, LocalDateTime.now(), reservationId);
         if (updated > 0) {
-            changeCredit(userId, -5, "INVALID_CHECKIN_REVERT", "无效签到已撤销", reservationId);
+            changeCredit(userId, -5, CREDIT_OTHER, "无效签到已撤销", reservationId);
             notifyUser(userId, "签到无效", "你的签到不在有效时间内，已恢复为待签到状态。", "CHECKIN", reservationId);
         }
     }
 
     private void autoCheckoutReservation(Long reservationId, Long userId, LocalDateTime signIn, LocalDateTime checkoutAt,
                                          String status, String reason) {
-        int minutes = signIn == null ? 0 : (int) Math.max(0, Duration.between(signIn, checkoutAt).toMinutes());
-        jdbc.update("update reservation set status=?,sign_out_time=?,actual_minutes=?,updated_at=? where id=? and status in ('USING','TEMP_LEAVE')",
-                status, checkoutAt, minutes, LocalDateTime.now(), reservationId);
+        jdbc.update("update reservation set status=?,sign_out_time=?,updated_at=? where id=? and status in ('" + RES_USING + "','USING')",
+                dbReservationStatus(status), checkoutAt, LocalDateTime.now(), reservationId);
         jdbc.update("update checkin_record set checkout_time=? where reservation_id=?", checkoutAt, reservationId);
         releaseReservationSlots(reservationId);
         notifyUser(userId, "自动签退", reason, "CHECKOUT", reservationId);
@@ -1459,7 +1465,7 @@ public class AppService {
 
     private void notifyUser(Long userId, String title, String content, String type, Long relatedId) {
         jdbc.update("insert into notification_message(user_id,title,content,type,related_id,created_at) values(?,?,?,?,?,?)",
-                userId, title, content, type, relatedId, LocalDateTime.now());
+                userId, title, content, dbNotificationType(type), relatedId, LocalDateTime.now());
     }
 
     private void writeOperationLog(CurrentUser admin, String module, String action, String targetType, Long targetId, String detail) {
@@ -1467,7 +1473,7 @@ public class AppService {
             return;
         }
         jdbc.update("insert into operation_log(operator_id,operator_name,module,action,target_type,target_id,detail,created_at) values(?,?,?,?,?,?,?,?)",
-                admin.id(), admin.displayName(), module, action, targetType, targetId, detail, LocalDateTime.now());
+                admin.id(), admin.displayName(), dbOperationModule(module), dbOperationAction(action), dbOperationTarget(targetType), targetId, detail, LocalDateTime.now());
     }
 
     private void decorateRoom(Map<String, Object> room) {
@@ -1475,12 +1481,72 @@ public class AppService {
         Integer occupied = jdbc.queryForObject("""
                 select count(distinct rs.seat_id)
                 from reservation_slot rs join seat s on s.id=rs.seat_id
-                where s.room_id=? and rs.status='ACTIVE' and rs.slot_start>=? and rs.slot_start<?
-                """, Integer.class, id, LocalDate.now().atStartOfDay(), LocalDate.now().plusDays(1).atStartOfDay());
+                where s.room_id=? and %s and rs.slot_start>=? and rs.slot_start<?
+                """.formatted(activeSlotPredicate("rs")), Integer.class, id, LocalDate.now().atStartOfDay(), LocalDate.now().plusDays(1).atStartOfDay());
         int normal = room.containsKey("normalSeatCount") ? intValue(room.get("normalSeatCount")) :
-                Optional.ofNullable(jdbc.queryForObject("select count(*) from seat where room_id=? and is_seat=1 and status='NORMAL'", Integer.class, id)).orElse(0);
+                Optional.ofNullable(jdbc.queryForObject("select count(*) from seat where room_id=? and is_seat=1 and " + normalSeatPredicate("seat"), Integer.class, id)).orElse(0);
         room.put("availableSeats", Math.max(0, normal - (occupied == null ? 0 : occupied)));
         room.put("openTimeText", room.get("open_time") + "-" + room.get("close_time"));
+        List<String> facilityNames = jdbc.queryForList("""
+                select f.name from facility f
+                join study_room_facility rf on rf.facility_id=f.id
+                where rf.room_id=?
+                order by f.id
+                """, String.class, id);
+        room.put("facilityNames", facilityNames);
+        room.put("facilities", String.join(",", facilityNames));
+    }
+
+    private void decorateReservationDuration(Map<String, Object> row) {
+        LocalDateTime signIn = toNullableLocalDateTime(row.get("sign_in_time"));
+        LocalDateTime signOut = toNullableLocalDateTime(row.get("sign_out_time"));
+        if (signOut == null && statusIs(row.get("status"), RES_COMPLETED, "COMPLETED", "AUTO_CHECKOUT")) {
+            signOut = reservationEndAt(row);
+        }
+        int minutes = signIn == null || signOut == null ? 0 : (int) Math.max(0, Duration.between(signIn, signOut).toMinutes());
+        row.put("actualMinutes", minutes);
+        row.put("actual_minutes", minutes);
+    }
+
+    private void decorateAdminAccount(Map<String, Object> row) {
+        if (row == null) {
+            return;
+        }
+        row.put("roleLabel", row.get("role"));
+        row.put("statusLabel", row.get("status"));
+        row.put("role", statusIs(row.get("role"), ROLE_SUPER_ADMIN_DB, "SUPER_ADMIN") ? "SUPER_ADMIN" : "ADMIN");
+        row.put("status", statusIs(row.get("status"), ADMIN_NORMAL, "NORMAL") ? "NORMAL" : "DISABLED");
+    }
+
+    private void replaceRoomFacilities(Long roomId, String rawFacilities) {
+        jdbc.update("delete from study_room_facility where room_id=?", roomId);
+        for (String item : rawFacilities.split("[,，、/\\s]+")) {
+            String name = normalizeFacilityName(item);
+            if (name.isBlank()) {
+                continue;
+            }
+            try {
+                jdbc.update("insert into facility(name,created_at) values(?,?)", name, LocalDateTime.now());
+            } catch (Exception ignored) {
+            }
+            Long facilityId = jdbc.queryForObject("select id from facility where name=?", Long.class, name);
+            try {
+                jdbc.update("insert into study_room_facility(room_id,facility_id) values(?,?)", roomId, facilityId);
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private String normalizeFacilityName(String raw) {
+        String text = raw == null ? "" : raw.trim();
+        if (text.isBlank()) {
+            return "";
+        }
+        return switch (text) {
+            case "充电区", "插座", "电源" -> "电源插座";
+            case "投影仪" -> "投影设备";
+            default -> text;
+        };
     }
 
     private void recreateSeats(Long roomId, int rows, int cols, String prefix) {
@@ -1488,8 +1554,8 @@ public class AppService {
         for (int r = 1; r <= rows; r++) {
             for (int c = 1; c <= cols; c++) {
                 jdbc.update("insert into seat(room_id,seat_no,row_no,col_no,is_seat,cell_category,seat_type,has_power,near_window,quiet_zone,hot_seat,status,created_at,updated_at) values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                        roomId, prefix + "-" + String.format("%02d", (r - 1) * cols + c), r, c, 1, "SEAT", "普通座位",
-                        c % 2 == 0 ? 1 : 0, c == 1 || c == cols ? 1 : 0, r <= 2 ? 1 : 0, 0, "NORMAL", now, now);
+                        roomId, prefix + "-" + String.format("%03d", (r - 1) * cols + c), r, c, 1, "座位", r <= 2 ? "静音" : "普通",
+                        c % 2 == 0 ? 1 : 0, c == 1 || c == cols ? 1 : 0, r <= 2 ? 1 : 0, 0, SEAT_NORMAL, now, now);
             }
         }
     }
@@ -1513,8 +1579,8 @@ public class AppService {
             Long dupId = num(seat.get("id"));
             Integer active = jdbc.queryForObject("""
                     select count(*) from reservation
-                    where seat_id=? and status in ('PENDING','USING','TEMP_LEAVE')
-                    """, Integer.class, dupId);
+                    where seat_id=? and %s
+                    """.formatted(activeReservationPredicate("reservation")), Integer.class, dupId);
             if (active != null && active > 0) {
                 throw new BusinessException(409, "存在重复格子且含进行中预约，请先合并或删除重复座位");
             }
@@ -1524,7 +1590,7 @@ public class AppService {
         for (int r = 1; r <= rows; r++) {
             for (int c = 1; c <= cols; c++) {
                 String key = r + ":" + c;
-                String seatNo = prefix + "-" + String.format("%02d", (r - 1) * cols + c);
+                String seatNo = prefix.substring(0, Math.min(1, prefix.length())).toUpperCase(Locale.ROOT) + "-" + String.format("%03d", (r - 1) * cols + c);
                 if (cellMap.containsKey(key)) {
                     jdbc.update("update seat set seat_no=?,row_no=?,col_no=?,updated_at=? where id=?",
                             seatNo, r, c, now, num(cellMap.get(key).get("id")));
@@ -1532,8 +1598,8 @@ public class AppService {
                     jdbc.update("""
                             insert into seat(room_id,seat_no,row_no,col_no,is_seat,cell_category,seat_type,has_power,near_window,quiet_zone,hot_seat,status,created_at,updated_at)
                             values(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-                            """, roomId, seatNo, r, c, 1, "SEAT", "普通座位",
-                            c % 2 == 0 ? 1 : 0, c == 1 || c == cols ? 1 : 0, r <= 2 ? 1 : 0, 0, "NORMAL", now, now);
+                            """, roomId, seatNo, r, c, 1, "座位", r <= 2 ? "静音" : "普通",
+                            c % 2 == 0 ? 1 : 0, c == 1 || c == cols ? 1 : 0, r <= 2 ? 1 : 0, 0, SEAT_NORMAL, now, now);
                 }
             }
         }
@@ -1546,16 +1612,14 @@ public class AppService {
             Long seatId = num(seat.get("id"));
             Integer active = jdbc.queryForObject("""
                     select count(*) from reservation
-                    where seat_id=? and status in ('PENDING','USING','TEMP_LEAVE')
-                    """, Integer.class, seatId);
+                    where seat_id=? and %s
+                    """.formatted(activeReservationPredicate("reservation")), Integer.class, seatId);
             if (active != null && active > 0) {
                 throw new BusinessException(409, "缩小行列数前，请先处理超出范围的进行中预约座位");
             }
             jdbc.update("delete from seat where id=?", seatId);
         }
-        Integer seatCount = jdbc.queryForObject("select count(*) from seat where room_id=? and is_seat=1", Integer.class, roomId);
-        jdbc.update("update study_room set seat_count=?,cell_count=?,updated_at=? where id=?",
-                seatCount == null ? 0 : seatCount, rows * cols, now, roomId);
+        jdbc.update("update study_room set updated_at=? where id=?", now, roomId);
     }
 
     private void changeCredit(Long userId, int delta, String type, String reason, Long reservationId) {
@@ -1564,16 +1628,279 @@ public class AppService {
         int after = Math.max(0, Math.min(CREDIT_SCORE_MAX, before + delta));
         jdbc.update("update student_profile set credit_score=?,updated_at=? where user_id=?", after, LocalDateTime.now(), userId);
         jdbc.update("insert into credit_log(user_id,before_score,change_value,after_score,change_type,reason,reservation_id,created_at) values(?,?,?,?,?,?,?,?)",
-                userId, before, delta, after, type, reason, reservationId, LocalDateTime.now());
+                userId, before, delta, after, dbCreditType(type), reason, reservationId, LocalDateTime.now());
         if (after <= 0) {
             jdbc.update("insert into blacklist_record(user_id,start_time,end_time,reason,status) values(?,?,?,?,?)",
-                    userId, LocalDateTime.now(), LocalDateTime.now().plusDays(7), "信用积分小于等于0", "ACTIVE");
-            jdbc.update("update user_account set status='BLACKLIST',updated_at=? where id=?", LocalDateTime.now(), userId);
+                    userId, LocalDateTime.now(), LocalDateTime.now().plusDays(7), "信用积分小于等于0", BLACKLIST_ACTIVE);
+            jdbc.update("update user_account set status=?,updated_at=? where id=?", ACCOUNT_BLACKLIST, LocalDateTime.now(), userId);
         }
     }
 
     private static String sqlJoin(String... parts) {
         return SqlFragments.join(parts);
+    }
+
+    private static String studentRolePredicate(String alias) {
+        return alias + ".role in ('" + ROLE_STUDENT_DB + "','STUDENT')";
+    }
+
+    private static String adminRolePredicate(String alias) {
+        return alias + ".role in ('" + ROLE_ADMIN_DB + "','" + ROLE_SUPER_ADMIN_DB + "','ADMIN','SUPER_ADMIN')";
+    }
+
+    private static String normalAccountPredicate(String alias) {
+        return alias + ".status in ('" + ACCOUNT_NORMAL + "','NORMAL')";
+    }
+
+    private static String activeSlotPredicate(String alias) {
+        return alias + ".status in ('" + SLOT_ACTIVE + "','ACTIVE')";
+    }
+
+    private static String pendingReservationPredicate(String alias) {
+        return alias + ".status in ('" + RES_PENDING + "','PENDING')";
+    }
+
+    private static String usingReservationPredicate(String alias) {
+        return alias + ".status in ('" + RES_USING + "','USING')";
+    }
+
+    private static String activeReservationPredicate(String alias) {
+        return alias + ".status in ('" + RES_PENDING + "','" + RES_USING + "','PENDING','USING')";
+    }
+
+    private static String usedReservationPredicate(String alias) {
+        return alias + ".status in ('" + RES_USING + "','" + RES_COMPLETED + "','USING','COMPLETED','AUTO_CHECKOUT')";
+    }
+
+    private static String violatedReservationPredicate(String alias) {
+        return alias + ".status in ('" + RES_VIOLATED + "','VIOLATED','AUTO_CANCELLED')";
+    }
+
+    private static String normalSeatPredicate(String alias) {
+        return alias + ".status in ('" + SEAT_NORMAL + "','NORMAL')";
+    }
+
+    private static boolean statusIs(Object value, String canonicalChinese, String... legacyValues) {
+        String text = String.valueOf(value);
+        if (canonicalChinese.equals(text)) {
+            return true;
+        }
+        for (String legacy : legacyValues) {
+            if (legacy.equals(text)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String dbAccountStatus(String status) {
+        return switch (String.valueOf(status)) {
+            case "NORMAL", "正常" -> ACCOUNT_NORMAL;
+            case "PENDING", "待审核" -> ACCOUNT_PENDING;
+            case "DISABLED", "已禁用", "禁用" -> ACCOUNT_DISABLED;
+            case "BLACKLIST", "黑名单" -> ACCOUNT_BLACKLIST;
+            default -> status;
+        };
+    }
+
+    private static String dbAdminStatus(String status) {
+        return switch (String.valueOf(status)) {
+            case "NORMAL", "正常" -> ADMIN_NORMAL;
+            case "DISABLED", "离职", "已离职", "禁用", "已禁用" -> ADMIN_LEFT;
+            default -> status;
+        };
+    }
+
+    private static String dbAuditStatus(String status) {
+        return switch (String.valueOf(status)) {
+            case "APPROVED", "已通过" -> AUDIT_APPROVED;
+            case "REJECTED", "已拒绝" -> AUDIT_REJECTED;
+            case "PENDING", "待审核" -> AUDIT_PENDING;
+            default -> status;
+        };
+    }
+
+    private static String dbRoomStatus(String status) {
+        return switch (String.valueOf(status)) {
+            case "OPEN", "开放" -> ROOM_OPEN;
+            case "CLOSED", "关闭" -> ROOM_CLOSED;
+            case "MAINTAINING", "MAINTENANCE", "维护中" -> ROOM_MAINTENANCE;
+            default -> status;
+        };
+    }
+
+    private static String dbRoomType(String type) {
+        return switch (String.valueOf(type)) {
+            case "QUIET", "静音" -> "静音";
+            case "DISCUSSION", "讨论" -> "讨论";
+            case "POSTGRAD", "考研专区" -> "考研专区";
+            default -> "普通";
+        };
+    }
+
+    private static String dbCellCategory(String category) {
+        return switch (String.valueOf(category)) {
+            case "NON_SEAT", "AISLE", "非座位", "过道" -> "非座位";
+            default -> "座位";
+        };
+    }
+
+    private static String dbSeatType(String type) {
+        return switch (String.valueOf(type)) {
+            case "QUIET", "静音", "静音座位" -> "静音";
+            case "COMFORT", "舒适", "精品座位" -> "舒适";
+            default -> "普通";
+        };
+    }
+
+    private static String dbSeatStatus(String status) {
+        return switch (String.valueOf(status)) {
+            case "NORMAL", "空闲" -> SEAT_NORMAL;
+            case "DAMAGED", "MAINTAINING", "维修" -> SEAT_MAINTENANCE;
+            case "DISABLED", "停用", "禁用" -> SEAT_DISABLED;
+            default -> status;
+        };
+    }
+
+    private static String dbReservationStatus(String status) {
+        return switch (String.valueOf(status)) {
+            case "PENDING", "待使用" -> RES_PENDING;
+            case "USING", "使用中" -> RES_USING;
+            case "COMPLETED", "AUTO_CHECKOUT", "已完成" -> RES_COMPLETED;
+            case "CANCELLED", "已取消" -> RES_CANCELLED;
+            case "VIOLATED", "AUTO_CANCELLED", "已违约" -> RES_VIOLATED;
+            default -> status;
+        };
+    }
+
+    private static String dbFeedbackStatus(String status) {
+        return switch (String.valueOf(status)) {
+            case "DONE", "CLOSED", "已处理" -> FEEDBACK_DONE;
+            case "PENDING", "PROCESSING", "待处理" -> FEEDBACK_PENDING;
+            default -> status;
+        };
+    }
+
+    private static String dbFeedbackSeverity(String severity) {
+        return switch (String.valueOf(severity).toUpperCase(Locale.ROOT)) {
+            case "LOW" -> "低";
+            case "HIGH" -> "高";
+            case "CRITICAL" -> "紧急";
+            case "MEDIUM" -> FEEDBACK_MEDIUM;
+            default -> String.valueOf(severity);
+        };
+    }
+
+    private static String dbFeedbackType(String type) {
+        return switch (String.valueOf(type)) {
+            case "SEAT_REPAIR" -> FEEDBACK_SEAT_REPAIR;
+            case "SUGGESTION" -> FEEDBACK_SUGGESTION;
+            case "ENVIRONMENT", "NOISE" -> "环境";
+            default -> type == null || String.valueOf(type).isBlank() ? FEEDBACK_SUGGESTION : String.valueOf(type);
+        };
+    }
+
+    private static String dbAnnouncementType(String type) {
+        return switch (String.valueOf(type)) {
+            case "RULE" -> "使用规则";
+            case "MAINTENANCE" -> "维护公告";
+            case "SYSTEM" -> ANNOUNCEMENT_SYSTEM;
+            default -> type == null || String.valueOf(type).isBlank() ? ANNOUNCEMENT_SYSTEM : String.valueOf(type);
+        };
+    }
+
+    private static String dbAnnouncementStatus(String status) {
+        return switch (String.valueOf(status)) {
+            case "PUBLISHED", "已发布" -> ANNOUNCEMENT_PUBLISHED;
+            case "DELETED", "已删除" -> "已删除";
+            default -> status == null || String.valueOf(status).isBlank() ? ANNOUNCEMENT_PUBLISHED : String.valueOf(status);
+        };
+    }
+
+    private static String dbCreditType(String type) {
+        return switch (String.valueOf(type)) {
+            case "ON_TIME_CHECKIN" -> CREDIT_ON_TIME;
+            case "NO_SHOW", "USER_CANCEL" -> CREDIT_VIOLATION;
+            case "BLACKLIST_RELEASE", "VIOLATION_REVOKE" -> CREDIT_SYSTEM_RESTORE;
+            default -> type == null || String.valueOf(type).isBlank() ? CREDIT_OTHER : String.valueOf(type);
+        };
+    }
+
+    private static String dbNotificationType(String type) {
+        return switch (String.valueOf(type)) {
+            case "RESERVATION", "CHECKIN", "CHECKOUT", "预约" -> "预约";
+            case "ANNOUNCEMENT", "公告" -> "公告";
+            case "FEEDBACK", "反馈" -> "反馈";
+            case "CREDIT", "VIOLATION", "信用" -> "信用";
+            case "BLACKLIST", "黑名单" -> "黑名单";
+            case "SYSTEM", "系统" -> "系统";
+            default -> type == null || String.valueOf(type).isBlank() ? "系统" : String.valueOf(type);
+        };
+    }
+
+    private static String dbOperationModule(String module) {
+        return switch (String.valueOf(module)) {
+            case "AUTH" -> "认证";
+            case "USER" -> "用户";
+            case "ROOM" -> "自习室";
+            case "SEAT" -> "座位";
+            case "RESERVATION" -> "预约";
+            case "FEEDBACK" -> "反馈";
+            case "ADMIN" -> "管理员";
+            default -> module == null || String.valueOf(module).isBlank() ? "系统" : String.valueOf(module);
+        };
+    }
+
+    private static String dbOperationAction(String action) {
+        return switch (String.valueOf(action)) {
+            case "CHANGE_PASSWORD" -> "修改密码";
+            case "APPROVE" -> "通过";
+            case "REJECT" -> "拒绝";
+            case "CREATE" -> "新增";
+            case "UPDATE" -> "更新";
+            case "DELETE" -> "删除";
+            case "REVOKE_VIOLATION" -> "撤销违约";
+            case "HANDLE" -> "处理";
+            case "ENABLE" -> "启用";
+            case "DISABLE" -> "禁用";
+            default -> action == null || String.valueOf(action).isBlank() ? "操作" : String.valueOf(action);
+        };
+    }
+
+    private static String dbOperationTarget(String targetType) {
+        if (targetType == null) {
+            return null;
+        }
+        return switch (String.valueOf(targetType)) {
+            case "STUDENT" -> "学生";
+            case "ADMIN" -> "管理员";
+            case "STUDY_ROOM" -> "自习室";
+            case "SEAT" -> "座位";
+            case "RESERVATION" -> "预约";
+            case "FEEDBACK" -> "反馈";
+            case "ADMIN_ACCOUNT" -> "管理员账号";
+            case "USER" -> "用户";
+            default -> String.valueOf(targetType);
+        };
+    }
+
+    private static String normalizeGrade(String value) {
+        String text = value == null ? "" : value.trim();
+        if (text.matches("\\d{4}级")) {
+            return text.substring(0, 4);
+        }
+        if (text.matches("\\d{4}")) {
+            return text;
+        }
+        return text.isBlank() ? String.valueOf(LocalDate.now().getYear()) : text;
+    }
+
+    private static String normalizeRoomCode(String value) {
+        String text = value == null ? "" : value.trim().replaceAll("[^A-Za-z0-9]", "").toUpperCase(Locale.ROOT);
+        if (text.isBlank()) {
+            text = "ROOM" + Math.floorMod(System.currentTimeMillis(), 1_000_000L);
+        }
+        return text.length() <= 10 ? text : text.substring(0, 10);
     }
 
     /** WHERE 子句 + 管理员自习室范围，可选指定 roomId */
@@ -1730,5 +2057,18 @@ public class AppService {
             return ldt;
         }
         return LocalDateTime.parse(String.valueOf(value).replace(' ', 'T'));
+    }
+
+    private LocalDateTime toNullableLocalDateTime(Object value) {
+        if (value == null) {
+            return null;
+        }
+        return toLocalDateTime(value);
+    }
+
+    private static String durationMinutesExpression(String alias) {
+        String prefix = alias == null || alias.isBlank() ? "" : alias + ".";
+        return "greatest(0, timestampdiff(minute, " + prefix + "sign_in_time, coalesce("
+                + prefix + "sign_out_time, timestamp(" + prefix + "reserve_date," + prefix + "end_time))))";
     }
 }

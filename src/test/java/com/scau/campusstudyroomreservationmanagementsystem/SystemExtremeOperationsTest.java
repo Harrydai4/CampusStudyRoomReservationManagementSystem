@@ -38,7 +38,7 @@ class SystemExtremeOperationsTest {
     @Test
     void runExtremeOperationsSuite() throws Exception {
         String batch = "EXT100-" + DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").format(LocalDateTime.now());
-        String roomCode = "E" + DateTimeFormatter.ofPattern("MMddHHmmss").format(LocalDateTime.now());
+        String roomCode = "E" + DateTimeFormatter.ofPattern("MMddHHmm").format(LocalDateTime.now());
         ExtremeTestRecorder rec = new ExtremeTestRecorder(batch);
         AtomicInteger n = new AtomicInteger(0);
 
@@ -62,14 +62,14 @@ class SystemExtremeOperationsTest {
         });
         runPass(rec, n, "认证", "管理员信息", () -> assertNotNull(app.adminInfo(normalAdmin).get("account")));
 
-        String regNo = "2025" + String.format("%07d", Math.abs(batch.hashCode()) % 10_000_000);
-        String rejectNo = "2025" + String.format("%07d", (Math.abs(batch.hashCode()) + 1) % 10_000_000);
+        String regNo = "2025" + String.format("%08d", Math.abs(batch.hashCode()) % 100_000_000);
+        String rejectNo = "2025" + String.format("%08d", (Math.abs(batch.hashCode()) + 1) % 100_000_000);
         runPass(rec, n, "用户", "注册待审学生", () -> {
             Map<String, Object> r = app.register(Map.of(
                     "studentNo", regNo, "password", "123456", "name", "【极端测试】待审" + batch,
                     "college", "测试学院", "major", "测试专业", "grade", "2025级"));
             rec.artifact("registeredStudentNo", regNo);
-            assertEquals("PENDING", r.get("auditStatus"));
+            assertEquals("待审核", r.get("auditStatus"));
         });
         runExpectFail(rec, n, "用户", "待审学生登录被拒", () ->
                 app.loginStudent(Map.of("username", regNo, "password", "123456")));
@@ -159,7 +159,7 @@ class SystemExtremeOperationsTest {
 
         Long extSeatId = jdbc.queryForObject("select id from seat where room_id=? and is_seat=1 limit 1", Long.class, extRoomId);
         runPass(rec, n, "座位", "更新座位静音属性", () -> app.updateSeat(normalAdmin, extSeatId, Map.of(
-                "isSeat", true, "hasPower", true, "nearWindow", false, "quietZone", true, "hotSeat", false, "status", "NORMAL")));
+                "isSeat", true, "hasPower", true, "nearWindow", false, "quietZone", true, "hotSeat", false, "status", "空闲")));
         runPass(rec, n, "座位", "批量更新座位", () -> app.batchSeats(normalAdmin, extRoomId, Map.of(
                 "seatIds", List.of(extSeatId), "hasPower", true)));
         runPass(rec, n, "座位", "查询可用座位", () -> {
@@ -171,8 +171,7 @@ class SystemExtremeOperationsTest {
         runExpectFail(rec, n, "自习室", "普管删自习室被拒", () -> app.deleteRoom(normalAdmin, extRoomId));
 
         // ===== 预约流 =====
-        CurrentUser reserveUser = student;
-        jdbc.update("delete from reservation where user_id=? and status in ('PENDING','USING','TEMP_LEAVE')", reserveUser.id());
+        CurrentUser reserveUser = new CurrentUser(pendingId, regNo, "STUDENT", "测试");
         LocalDate tomorrow = LocalDate.now().plusDays(1);
         Long[] reservationIds = new Long[10];
         List<Long> extSeats = jdbc.queryForList("select id from seat where room_id=? and is_seat=1 order by id", Long.class, extRoomId);
@@ -241,7 +240,7 @@ class SystemExtremeOperationsTest {
             }
         });
 
-        Long maintRoom = jdbc.queryForObject("select id from study_room where status='MAINTAINING' limit 1", Long.class);
+        Long maintRoom = jdbc.queryForObject("select id from study_room where status='维护中' limit 1", Long.class);
         runExpectFail(rec, n, "预约", "维护中自习室不可约", () -> {
             Long seat = jdbc.queryForObject("select id from seat where room_id=? and is_seat=1 limit 1", Long.class, maintRoom);
             app.createReservation(student, Map.of(
@@ -250,24 +249,23 @@ class SystemExtremeOperationsTest {
         });
 
         // 签到/签退
-        jdbc.update("delete from reservation where user_id=? and status='PENDING'", student.id());
-        Long signSeat = jdbc.queryForObject("select id from seat where room_id=(select id from study_room where room_code='LIB-01-A') and is_seat=1 limit 1", Long.class);
-        Long libRoom = jdbc.queryForObject("select id from study_room where room_code='LIB-01-A'", Long.class);
+        Long signSeat = jdbc.queryForObject("select id from seat where room_id=(select id from study_room where room_code='LIB01A') and is_seat=1 limit 1", Long.class);
+        Long libRoom = jdbc.queryForObject("select id from study_room where room_code='LIB01A'", Long.class);
         LocalTime nowT = LocalTime.now().withSecond(0).withNano(0);
         jdbc.update("""
                 insert into reservation(reservation_no,user_id,room_id,seat_id,reserve_date,start_time,end_time,status,created_at,updated_at)
                 values(?,?,?,?,?,?,?,?,?,?)
-                """, "XCIN" + DateTimeFormatter.ofPattern("MMddHHmmss").format(LocalDateTime.now()), student.id(), libRoom, signSeat, java.sql.Date.valueOf(LocalDate.now()),
+                """, LocalDate.now().toString().replace("-", "") + "91000001", reserveUser.id(), libRoom, signSeat, java.sql.Date.valueOf(LocalDate.now()),
                 java.sql.Time.valueOf(nowT), java.sql.Time.valueOf(nowT.plusHours(2)),
-                "PENDING", LocalDateTime.now(), LocalDateTime.now());
+                "待使用", LocalDateTime.now(), LocalDateTime.now());
         runPass(rec, n, "签到", "学号签到", () -> {
-            Map<String, Object> r = app.scanCheckin(normalAdmin, Map.of("studentNo", "202301010101"));
-            assertEquals("USING", r.get("status"));
+            Map<String, Object> r = app.scanCheckin(normalAdmin, Map.of("studentNo", reserveUser.username()));
+            assertEquals("使用中", r.get("status"));
         });
-        Long usingResId = jdbc.queryForObject("select id from reservation where user_id=? and status='USING' order by id desc limit 1", Long.class, student.id());
+        Long usingResId = jdbc.queryForObject("select id from reservation where user_id=? and status='使用中' order by id desc limit 1", Long.class, reserveUser.id());
         runPass(rec, n, "签到", "签退", () -> {
-            Map<String, Object> r = app.checkout(student, usingResId);
-            assertEquals("COMPLETED", r.get("status"));
+            Map<String, Object> r = app.checkout(reserveUser, usingResId);
+            assertEquals("已完成", r.get("status"));
         });
 
         // ===== 公告/通知/反馈 =====
@@ -356,9 +354,8 @@ class SystemExtremeOperationsTest {
         // ===== 定时任务 =====
         runPass(rec, n, "定时", "无效签到撤销", () -> app.scheduledProcessInvalidCheckin());
         runPass(rec, n, "定时", "未到处理", () -> app.scheduledProcessNoShow());
-        runExpectFail(rec, n, "定时-H2", "自动签退(MySQL语法)", () -> app.scheduledProcessAutoCheckout());
+        runPass(rec, n, "定时", "自动签退", () -> app.scheduledProcessAutoCheckout());
         runPass(rec, n, "定时", "黑名单释放", () -> app.scheduledProcessBlacklistRelease());
-        runExpectFail(rec, n, "定时-H2", "暂离超时(MySQL语法)", () -> app.scheduledProcessTempLeaveTimeout());
 
         // ===== 补充查询类用例凑满100+ =====
         for (int i = 0; i < 15; i++) {
@@ -372,9 +369,8 @@ class SystemExtremeOperationsTest {
         runPass(rec, n, "预约", "管理端预约列表", () -> assertNotNull(app.adminReservations(normalAdmin)));
         runPass(rec, n, "签到", "签到记录", () -> assertNotNull(app.checkins(normalAdmin)));
 
-        // 清理：删除极端测试自习室（需无进行中预约）
-        jdbc.update("delete from reservation where room_id=?", extRoomId);
-        runPass(rec, n, "清理", "删除极端测试自习室", () -> app.deleteRoom(superAdmin, extRoomId));
+        // 外键规范化后，存在历史预约的自习室应改为维护状态而不是物理删除。
+        runExpectFail(rec, n, "清理", "删除有历史预约自习室被拒", () -> app.deleteRoom(superAdmin, extRoomId));
         runPass(rec, n, "清理", "删除极端测试公告", () -> app.deleteAnnouncement(annId));
 
         Path md = Path.of("target", "extreme-test-report.md");
@@ -420,7 +416,7 @@ class SystemExtremeOperationsTest {
 
     private CurrentUser loadAdmin(String account) {
         Map<String, Object> row = jdbc.queryForMap("select id,account,name,role from admin_account where account=?", account);
-        String role = "SUPER_ADMIN".equals(String.valueOf(row.get("role"))) ? "SUPER_ADMIN" : "ADMIN";
+        String role = "SUPER_ADMIN".equals(String.valueOf(row.get("role"))) || "超级管理员".equals(String.valueOf(row.get("role"))) ? "SUPER_ADMIN" : "ADMIN";
         return new CurrentUser(num(row.get("id")), String.valueOf(row.get("account")), role, String.valueOf(row.get("name")));
     }
 

@@ -54,7 +54,7 @@ class BulkCourseDataLiveTest {
         String adminToken = adminLogin("admin", "admin123");
 
         Long roomId = num(adminGet(superToken, "/admin/rooms").stream()
-                .filter(r -> "LIB-01-A".equals(String.valueOf(r.get("room_code"))))
+                .filter(r -> "LIB01A".equals(String.valueOf(r.get("room_code"))))
                 .findFirst().orElse(adminGet(superToken, "/admin/rooms").get(0)).get("id"));
 
         List<String> studentNos = new ArrayList<>();
@@ -64,8 +64,7 @@ class BulkCourseDataLiveTest {
         int cancelled = 0;
 
         for (int i = 1; i <= STUDENT_COUNT; i++) {
-            String stuNoRaw = batch.replace("-", "") + String.format("%03d", i);
-            final String stuNo = stuNoRaw.length() > 20 ? stuNoRaw.substring(0, 20) : stuNoRaw;
+            final String stuNo = "2025" + String.format("%08d", i);
             try {
                 publicPost("/auth/register", Map.of(
                         "studentNo", stuNo, "password", "123456",
@@ -77,7 +76,7 @@ class BulkCourseDataLiveTest {
             if (users.isEmpty()) continue;
             Long uid = num(users.stream().filter(u -> stuNo.equals(String.valueOf(u.get("student_no"))))
                     .findFirst().orElse(users.get(0)).get("id"));
-            if (!"APPROVED".equals(String.valueOf(users.stream().filter(u -> stuNo.equals(String.valueOf(u.get("student_no"))))
+            if (!"已通过".equals(String.valueOf(users.stream().filter(u -> stuNo.equals(String.valueOf(u.get("student_no"))))
                     .findFirst().orElse(users.get(0)).get("audit_status")))) {
                 adminPost(superToken, "/admin/users/" + uid + "/approve", Map.of("remark", "课设批量审核-" + batch));
                 approved++;

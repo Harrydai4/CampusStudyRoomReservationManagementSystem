@@ -31,9 +31,9 @@ class RealDataChainIntegrationTest {
     @Test
     @Transactional
     void reservationCancelCreditAndStatisticsMatchDatabase() {
-        Long roomId = jdbc.queryForObject("select id from study_room where room_code='LIB-01-A'", Long.class);
+        Long roomId = jdbc.queryForObject("select id from study_room where room_code='LIB01A'", Long.class);
         Long seatId = jdbc.queryForObject(
-                "select id from seat where room_id=? and is_seat=1 and status='NORMAL' limit 1", Long.class, roomId);
+                "select id from seat where room_id=? and is_seat=1 and status='空闲' limit 1", Long.class, roomId);
         Long userId = jdbc.queryForObject("select user_id from student_profile where student_no='202301010101'", Long.class);
         CurrentUser student = new CurrentUser(userId, "202301010101", "STUDENT", "张三");
 
@@ -46,7 +46,7 @@ class RealDataChainIntegrationTest {
         Long reservationId = ((Number) created.get("id")).longValue();
 
         Integer slotCount = jdbc.queryForObject(
-                "select count(*) from reservation_slot where reservation_id=? and status='ACTIVE'", Integer.class, reservationId);
+                "select count(*) from reservation_slot where reservation_id=? and status='占用'", Integer.class, reservationId);
         assertTrue(slotCount != null && slotCount > 0, "预约应写入 reservation_slot");
 
         List<Map<String, Object>> myList = app.myReservations(student, "ALL", false);
@@ -57,15 +57,15 @@ class RealDataChainIntegrationTest {
         assertEquals(scoreBefore - 50, scoreAfter, "取消预约应扣 50 分");
 
         Integer cancelLog = jdbc.queryForObject(
-                "select count(*) from credit_log where user_id=? and reservation_id=? and change_type='USER_CANCEL' and change_value=-50",
+                "select count(*) from credit_log where user_id=? and reservation_id=? and change_type='违约扣减' and change_value=-50",
                 Integer.class, userId, reservationId);
         assertEquals(1, cancelLog);
 
         String status = jdbc.queryForObject("select status from reservation where id=?", String.class, reservationId);
-        assertEquals("CANCELLED", status);
+        assertEquals("已取消", status);
 
         Integer activeSlots = jdbc.queryForObject(
-                "select count(*) from reservation_slot where reservation_id=? and status='ACTIVE'", Integer.class, reservationId);
+                "select count(*) from reservation_slot where reservation_id=? and status='占用'", Integer.class, reservationId);
         assertEquals(0, activeSlots, "取消后 reservation_slot 应释放");
 
         // 单室预约计数：与数据库直接查询一致（不依赖 MySQL 专用统计函数，H2/MySQL 通用）

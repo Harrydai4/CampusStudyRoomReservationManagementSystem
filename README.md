@@ -1,6 +1,6 @@
 # 校园自习室预约管理系统
 
-> **版本**：V1.3 · Spring Boot 3.5 + Vue 3 + MySQL 8
+> **版本**：V3.0（第三版数据字典规范化）· Spring Boot 3.5 + Vue 3 + MySQL 8
 
 ---
 
@@ -19,7 +19,7 @@
 **下载 ZIP（无需 Git）**：  
 https://github.com/Harrydai4/CampusStudyRoomReservationManagementSystem/archive/refs/heads/v1.3-harrydai4.zip
 
-**登录**：`admin` / `admin123` · 学生 `202301010101` / `123456`
+**登录**：`admin` / `admin123` · 学生 `202225220101` / `123456`（第三版 SQL）
 
 ---
 
