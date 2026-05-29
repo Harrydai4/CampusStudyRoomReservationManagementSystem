@@ -151,7 +151,7 @@ if ($mysqlService.Status -ne "Running") {
 }
 Write-Host "MySQL service is running: $($mysqlService.Name)" -ForegroundColor Green
 
-Write-Step "[3/5] Check MySQL password and import full SCAU test database"
+Write-Step "[3/5] Clean import full database (drop + database-full.sql)"
 $password = if ($env:CSRRM_MYSQL_PASSWORD) { $env:CSRRM_MYSQL_PASSWORD } else { Get-ConfiguredMysqlPassword }
 if ($password -and (Test-MysqlLogin $password)) {
     Write-Host "Connected with the configured database password." -ForegroundColor Green
@@ -236,7 +236,7 @@ if ($ips.Count -gt 0) {
 Write-Host ""
 Write-Host "Login accounts:" -ForegroundColor Cyan
 Write-Host "  Admin:   admin / admin123"
-Write-Host "  Student: 202425220302 / 123456"
+Write-Host "  Student: 202225220101 / 123456"
 Write-Host ""
 Write-Host "Tip: if other devices cannot open the LAN URL, allow Windows Firewall port 8080." -ForegroundColor Yellow
 

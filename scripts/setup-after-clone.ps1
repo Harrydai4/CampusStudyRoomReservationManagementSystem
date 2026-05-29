@@ -111,7 +111,7 @@ $outLines | Set-Content -Path $localProps -Encoding UTF8
 Write-Host "[OK] local config ready (demo sync off = keep SQL data)" -ForegroundColor Green
 
 if (-not $SkipImport) {
-    Write-Step "3/6 Import database-full.sql"
+    Write-Step "3/6 Clean import database-full.sql (drop DB then restore)"
     $cfgDir = Get-DeployConfigDir $root
     $fullSql = Join-Path $cfgDir "database-full.sql"
     if (-not (Test-Path -LiteralPath $fullSql)) {
@@ -121,6 +121,8 @@ if (-not $SkipImport) {
         exit 1
     }
     & (Join-Path $PSScriptRoot "import-database-local.ps1") -Password $MySqlPassword -User $User -DbHost $DbHost -Port $Port -UseFullDump
+    if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+    & (Join-Path $PSScriptRoot "verify-v3-dictionary.ps1") -Password $MySqlPassword -User $User -DbHost $DbHost -Port $Port
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } else {
     Write-Step "3/6 Skip import"

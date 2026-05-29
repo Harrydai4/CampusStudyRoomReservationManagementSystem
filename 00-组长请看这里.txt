@@ -17,7 +17,7 @@
   1. 解压，进入含 pom.xml 的文件夹（与本文件同目录）
   2. 双击 组长一键启动.bat
   3. 输入本机 MySQL 的 root 密码（不是 admin123！）
-  4. 首次选 Y 导入数据库
+  4. 脚本会自动【清空本地库】并导入 database-full.sql（以仓库 SQL 为准）
   5. 保留「CSRRM-Backend」窗口，浏览器打开 http://localhost:8080
 
 【浏览器登录】

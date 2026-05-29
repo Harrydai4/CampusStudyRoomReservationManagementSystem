@@ -1,13 +1,15 @@
-# 从仓库 SQL 恢复本地 MySQL（clone 后首次导入）
+# 从仓库 SQL 恢复本地 MySQL（每次一键启动默认先清空再导入）
 # 用法：.\scripts\import-database-local.ps1
 #       .\scripts\import-database-local.ps1 -Password 123456
+#       .\scripts\import-database-local.ps1 -UseFullDump -CleanDatabase:$false  # 仅追加式导入（不推荐）
 
 param(
     [string]$DbHost = "127.0.0.1",
     [int]$Port = 3306,
     [string]$User = "root",
     [string]$Password = "",
-    [switch]$UseFullDump
+    [switch]$UseFullDump,
+    [bool]$CleanDatabase = $true
 )
 
 $ErrorActionPreference = "Stop"
@@ -47,6 +49,7 @@ $dataSql = Join-Path $cfgDir "data.sql"
 $fullSql = Join-Path $cfgDir "database-full.sql"
 
 $env:MYSQL_PWD = $Password
+$dbName = "study_room_reservation"
 
 function Invoke-SqlFile {
     param([string]$Path, [string]$DatabaseName = "")
@@ -65,20 +68,48 @@ function Invoke-SqlFile {
     }
 }
 
+function Invoke-SqlCommand {
+    param([string]$Sql, [string]$DatabaseName = "")
+    $mysqlExe = (Get-Command mysql).Source
+    $args = @("-h", $DbHost, "-P", "$Port", "--protocol=TCP", "-u", $User, "-N", "-B", "-e", $Sql)
+    if ($DatabaseName) { $args += $DatabaseName }
+    $out = & $mysqlExe @args 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $msg = ($out | Out-String).Trim()
+        throw "mysql command failed: $msg"
+    }
+    return $out
+}
+
+function Reset-Database {
+    Write-Host ">> Drop and recreate database: $dbName" -ForegroundColor Yellow
+    Invoke-SqlCommand "DROP DATABASE IF EXISTS ``$dbName``;" | Out-Null
+    if (Test-Path -LiteralPath $initLeaderSql) {
+        Invoke-SqlFile -Path $initLeaderSql
+    } else {
+        Invoke-SqlCommand "CREATE DATABASE ``$dbName`` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" | Out-Null
+    }
+    Write-Host "OK: database $dbName is empty and ready for import" -ForegroundColor Green
+}
+
 try {
     Write-Host "=== Import CSRRM database from repo SQL ===" -ForegroundColor Cyan
 
     if ($UseFullDump -and (Test-Path -LiteralPath $fullSql)) {
-        # 组长本机：只用建库脚本，不跑 init-shared-mysql（避免 CREATE USER 权限错误）
-        if (Test-Path -LiteralPath $initLeaderSql) {
-            Invoke-SqlFile -Path $initLeaderSql
-        } elseif (Test-Path -LiteralPath $initSql) {
-            Write-Host "WARN: using init-shared-mysql.sql (needs CREATE USER privilege)" -ForegroundColor Yellow
-            Invoke-SqlFile -Path $initSql
+        if ($CleanDatabase) {
+            Reset-Database
+        } else {
+            if (Test-Path -LiteralPath $initLeaderSql) {
+                Invoke-SqlFile -Path $initLeaderSql
+            } elseif (Test-Path -LiteralPath $initSql) {
+                Write-Host "WARN: using init-shared-mysql.sql (needs CREATE USER privilege)" -ForegroundColor Yellow
+                Invoke-SqlFile -Path $initSql
+            }
         }
-        Invoke-SqlFile -Path $fullSql -DatabaseName "study_room_reservation"
-        Write-Host "OK: imported database-full.sql (snapshot restored)" -ForegroundColor Green
-        Write-Host "Tip: set app.demo.sync-accounts-on-startup=false in application-local.properties" -ForegroundColor Yellow
+        Invoke-SqlFile -Path $fullSql -DatabaseName $dbName
+        Write-Host "OK: imported database-full.sql (clean snapshot restored)" -ForegroundColor Green
+        Write-Host "Tip: app.demo.sync-accounts-on-startup=false keeps SQL demo data unchanged" -ForegroundColor Yellow
+        Write-Host "Demo login: student 202225220101 / 123456 , admin admin / admin123" -ForegroundColor Yellow
         return
     }
 
@@ -89,9 +120,13 @@ try {
         }
     }
 
-    Invoke-SqlFile -Path $initSql
-    Invoke-SqlFile -Path $schemaSql -DatabaseName "study_room_reservation"
-    Invoke-SqlFile -Path $dataSql -DatabaseName "study_room_reservation"
+    if ($CleanDatabase) {
+        Reset-Database
+    } else {
+        Invoke-SqlFile -Path $initSql
+    }
+    Invoke-SqlFile -Path $schemaSql -DatabaseName $dbName
+    Invoke-SqlFile -Path $dataSql -DatabaseName $dbName
     Write-Host "OK: init + schema + data imported" -ForegroundColor Green
     Write-Host "Demo login: student 202225220101 / 123456 , admin admin / admin123" -ForegroundColor Yellow
 } finally {
