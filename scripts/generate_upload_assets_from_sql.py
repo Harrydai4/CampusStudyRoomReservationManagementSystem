@@ -18,8 +18,23 @@ SQL_PATH = next((ROOT / "docs").glob("06-*")) / "data.sql"
 UPLOADS = ROOT / "uploads"
 LAYOUT_DIR = UPLOADS / "layout"
 MATERIAL_DIR = UPLOADS / "material"
-FONT_REGULAR = Path("C:/Windows/Fonts/NotoSansSC-VF.ttf")
-FONT_BOLD = Path("C:/Windows/Fonts/simhei.ttf")
+FONT_CANDIDATES = [
+    Path("C:/Windows/Fonts/msyh.ttc"),
+    Path("C:/Windows/Fonts/simhei.ttf"),
+    Path("C:/Windows/Fonts/simsun.ttc"),
+    Path("C:/Windows/Fonts/NotoSansSC-VF.ttf"),
+]
+
+
+def resolve_font_path() -> Path:
+    for p in FONT_CANDIDATES:
+        if p.exists():
+            return p
+    raise FileNotFoundError("No Chinese font found under C:/Windows/Fonts")
+
+
+FONT_REGULAR = resolve_font_path()
+FONT_BOLD = FONT_REGULAR
 
 
 def extract_insert_values(sql: str, table: str) -> str:
@@ -288,12 +303,25 @@ def stable_matrix(seed: str, n: int = 9) -> list[list[int]]:
     return [[bits[(r * n + c) % len(bits)] for c in range(n)] for r in range(n)]
 
 
+def register_pdf_fonts() -> tuple[str, str]:
+    path = FONT_REGULAR
+    suffix = path.suffix.lower()
+    if suffix == ".ttc":
+        regular = TTFont("PdfRegular", str(path), subfontIndex=0)
+        bold = TTFont("PdfBold", str(path), subfontIndex=0)
+    else:
+        regular = TTFont("PdfRegular", str(path))
+        bold = TTFont("PdfBold", str(FONT_BOLD))
+    pdfmetrics.registerFont(regular)
+    pdfmetrics.registerFont(bold)
+    return "PdfRegular", "PdfBold"
+
+
 def generate_material(student: dict[str, object]) -> Path:
     material_url = str(student["material_url"])
     out = ROOT / material_url.lstrip("/")
     out.parent.mkdir(parents=True, exist_ok=True)
-    pdfmetrics.registerFont(TTFont("NotoSC", str(FONT_REGULAR)))
-    pdfmetrics.registerFont(TTFont("SimHei", str(FONT_BOLD)))
+    title_font, body_font = register_pdf_fonts()
 
     c = canvas.Canvas(str(out), pagesize=A4)
     w, h = A4
@@ -302,9 +330,9 @@ def generate_material(student: dict[str, object]) -> Path:
     c.setFillColor(colors.HexColor("#2f6f5f"))
     c.rect(0, h - 16 * mm, w, 16 * mm, fill=1, stroke=0)
     c.setFillColor(colors.white)
-    c.setFont("SimHei", 18)
+    c.setFont(title_font, 18)
     c.drawString(22 * mm, h - 10 * mm, "华南农业大学学生身份核验材料")
-    c.setFont("NotoSC", 9)
+    c.setFont(body_font, 9)
     c.drawRightString(w - 22 * mm, h - 10 * mm, "Campus Study Room Reservation")
 
     card_x, card_y, card_w, card_h = 22 * mm, 32 * mm, w - 44 * mm, h - 70 * mm
@@ -315,9 +343,9 @@ def generate_material(student: dict[str, object]) -> Path:
     c.roundRect(card_x, card_y, card_w, card_h, 7 * mm, fill=0, stroke=1)
 
     c.setFillColor(colors.HexColor("#17352f"))
-    c.setFont("SimHei", 22)
+    c.setFont(title_font, 22)
     c.drawString(card_x + 14 * mm, card_y + card_h - 20 * mm, str(student["name"]))
-    c.setFont("NotoSC", 11)
+    c.setFont(body_font, 11)
     c.setFillColor(colors.HexColor("#607069"))
     c.drawString(card_x + 14 * mm, card_y + card_h - 29 * mm, f"学号 {student['student_no']} · {student['grade']} · {student['major']}")
 
@@ -325,9 +353,9 @@ def generate_material(student: dict[str, object]) -> Path:
     c.setFillColor(colors.HexColor("#e9f4ef"))
     c.roundRect(photo_x, photo_y, 34 * mm, 42 * mm, 4 * mm, fill=1, stroke=0)
     c.setFillColor(colors.HexColor("#2f6f5f"))
-    c.setFont("SimHei", 24)
+    c.setFont(title_font, 24)
     c.drawCentredString(photo_x + 17 * mm, photo_y + 25 * mm, str(student["name"])[:1])
-    c.setFont("NotoSC", 7)
+    c.setFont(body_font, 7)
     c.drawCentredString(photo_x + 17 * mm, photo_y + 13 * mm, str(student["student_no"]))
 
     fields = [
@@ -346,10 +374,10 @@ def generate_material(student: dict[str, object]) -> Path:
     line_h = 12 * mm
     for label, value in fields:
         c.setFillColor(colors.HexColor("#8a9892"))
-        c.setFont("NotoSC", 9)
+        c.setFont(body_font, 9)
         c.drawString(x1, y, label)
         c.setFillColor(colors.HexColor("#1f2d2a"))
-        c.setFont("NotoSC", 10.5)
+        c.setFont(body_font, 10.5)
         c.drawString(x1 + label_w, y, str(value))
         c.setStrokeColor(colors.HexColor("#edf1ea"))
         c.line(x1, y - 3 * mm, card_x + card_w - 14 * mm, y - 3 * mm)
@@ -367,12 +395,12 @@ def generate_material(student: dict[str, object]) -> Path:
                 c.rect(mx + col * cell, my + (8 - r) * cell, cell * 0.82, cell * 0.82, fill=1, stroke=0)
 
     c.setFillColor(colors.HexColor("#607069"))
-    c.setFont("NotoSC", 8)
+    c.setFont(body_font, 8)
     c.drawString(card_x + 66 * mm, card_y + 51 * mm, "用途：校园自习室预约系统注册审核")
     c.drawString(card_x + 66 * mm, card_y + 43 * mm, "说明：本材料由系统根据数据库学生档案生成，用于课程设计演示。")
     c.drawString(card_x + 66 * mm, card_y + 35 * mm, f"档案创建时间：{student['created_at']}    最近更新：{student['updated_at']}")
     c.setFillColor(colors.HexColor("#2f6f5f"))
-    c.setFont("SimHei", 13)
+    c.setFont(title_font, 13)
     c.drawRightString(card_x + card_w - 16 * mm, card_y + 20 * mm, "学生身份材料")
     c.save()
     return out

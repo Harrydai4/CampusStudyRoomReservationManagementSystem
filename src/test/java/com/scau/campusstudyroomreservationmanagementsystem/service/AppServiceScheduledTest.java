@@ -27,7 +27,7 @@ class AppServiceScheduledTest {
 
     @Test
     void scheduledProcessNoShowMarksViolatedAndDeductsCredit() {
-        Long userId = jdbc.queryForObject("select id from user_account where username='202301010101'", Long.class);
+        Long userId = jdbc.queryForObject("select id from user_account where username='202225220101'", Long.class);
         int before = jdbc.queryForObject("select credit_score from student_profile where user_id=?", Integer.class, userId);
         Long seatId = jdbc.queryForObject("select id from seat limit 1", Long.class);
         Long roomId = jdbc.queryForObject("select room_id from seat where id=?", Long.class, seatId);

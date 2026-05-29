@@ -452,7 +452,7 @@
                 <input ref="scanPhotoInput" type="file" accept="image/*" capture="environment" class="scan-photo-input" @change="onScanPhotoSelected" />
               </div>
               <div class="scan-student-row">
-                <input v-model="scanStudentNo" class="input" placeholder="请输入学生学号，如 202301010101" maxlength="20" :disabled="scanBusy" @keyup.enter="scanCheckin" />
+                <input v-model="scanStudentNo" class="input" placeholder="请输入学生学号，如 202225220101" maxlength="20" :disabled="scanBusy" @keyup.enter="scanCheckin" />
               </div>
             </div>
             <el-input v-model="checkinKeyword" placeholder="搜索学号、姓名、自习室或座位" clearable />
@@ -1020,7 +1020,7 @@ const isDesktop = computed(() => width.value >= 900)
 const toast = ref('')
 const me = ref({})
 const loginRole = ref('student')
-const studentLogin = reactive({ username: '202301010101', password: '123456' })
+const studentLogin = reactive({ username: '202225220101', password: '123456' })
 const adminLogin = reactive({ account: 'admin', password: 'admin123' })
 const registerOpen = ref(false)
 const registerPassword2 = ref('')

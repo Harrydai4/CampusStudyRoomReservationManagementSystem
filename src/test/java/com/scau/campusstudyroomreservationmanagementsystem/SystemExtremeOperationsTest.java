@@ -44,21 +44,21 @@ class SystemExtremeOperationsTest {
 
         CurrentUser superAdmin = loadAdmin("superadmin");
         CurrentUser normalAdmin = loadAdmin("admin");
-        CurrentUser student = loadStudent("202301010101");
+        CurrentUser student = loadStudent("202225220101");
         Long adminManagerId = jdbc.queryForObject("select id from admin_account where account='admin'", Long.class);
 
         // ===== 认证与用户 =====
         runPass(rec, n, "认证", "学生登录成功", () -> {
-            Map<String, Object> r = app.loginStudent(Map.of("username", "202301010101", "password", "123456"));
+            Map<String, Object> r = app.loginStudent(Map.of("username", "202225220101", "password", "123456"));
             assertNotNull(r.get("token"));
         });
         runExpectFail(rec, n, "认证", "学生错误密码", () ->
-                app.loginStudent(Map.of("username", "202301010101", "password", "wrong")));
+                app.loginStudent(Map.of("username", "202225220101", "password", "wrong")));
         runPass(rec, n, "认证", "管理员登录", () -> app.loginAdmin(Map.of("account", "admin", "password", "admin123")));
         runPass(rec, n, "认证", "超管登录", () -> app.loginAdmin(Map.of("account", "superadmin", "password", "super123")));
         runPass(rec, n, "认证", "学生信息", () -> {
             Map<String, Object> info = app.studentInfo(student);
-            assertEquals("202301010101", String.valueOf(info.get("student_no")));
+            assertEquals("202225220101", String.valueOf(info.get("student_no")));
         });
         runPass(rec, n, "认证", "管理员信息", () -> assertNotNull(app.adminInfo(normalAdmin).get("account")));
 
@@ -196,7 +196,7 @@ class SystemExtremeOperationsTest {
                     rec.artifact("extremeReservationId", reservationIds[0]);
                     rec.artifact("extremeReservationDate", resDate.toString());
                 }
-            }, idx == 0 ? "学生端→我的预约，学号 202301010101" : "");
+            }, idx == 0 ? "学生端→我的预约，学号 202225220101" : "");
         }
 
         runExpectFail(rec, n, "预约", "同用户同时段重复预约", () -> {

@@ -1,4 +1,4 @@
-# 05 — 启动流程与 PowerShell 命令（可复制）
+﻿# 05 — 启动流程与 PowerShell 命令（可复制）
 
 > **项目根目录（所有命令都从这里或子目录执行）**：`D:\SchoolWorkPlace\Database\CSRRMupdate`  
 > **答辩/验收推荐地址**：[http://localhost:8080](http://localhost:8080)  
@@ -183,7 +183,7 @@ cd D:\SchoolWorkPlace\Database\CSRRMupdate
 
 | 角色    | 账号           | 密码       |
 | ----- | ------------ | -------- |
-| 学生    | 202301010101 | 123456   |
+| 学生    | 202225220101 | 123456   |
 | 管理员   | admin        | admin123 |
 | 超级管理员 | superadmin   | super123 |
 

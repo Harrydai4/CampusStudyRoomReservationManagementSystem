@@ -29,7 +29,7 @@ class AppServiceCheckinWindowTest {
 
     @Test
     void scanCheckinByStudentNoWithinWindow() {
-        Long userId = jdbc.queryForObject("select id from user_account where username='202301010101'", Long.class);
+        Long userId = jdbc.queryForObject("select id from user_account where username='202225220101'", Long.class);
         Long seatId = jdbc.queryForObject("select id from seat where is_seat=1 limit 1", Long.class);
         Long roomId = jdbc.queryForObject("select room_id from seat where id=?", Long.class, seatId);
         LocalDate today = LocalDate.now();
@@ -43,13 +43,13 @@ class AppServiceCheckinWindowTest {
 
         var admin = new com.scau.campusstudyroomreservationmanagementsystem.support.CurrentUser(
                 1L, "admin", "ADMIN", "张老师");
-        var result = appService.scanCheckin(admin, Map.of("studentNo", "202301010101"));
+        var result = appService.scanCheckin(admin, Map.of("studentNo", "202225220101"));
         assertEquals("使用中", result.get("status"));
     }
 
     @Test
     void qrCodeRejectsOutsideCheckinWindow() {
-        Long userId = jdbc.queryForObject("select id from user_account where username='202301010101'", Long.class);
+        Long userId = jdbc.queryForObject("select id from user_account where username='202225220101'", Long.class);
         Long seatId = jdbc.queryForObject("select id from seat limit 1", Long.class);
         Long roomId = jdbc.queryForObject("select room_id from seat where id=?", Long.class, seatId);
         LocalDate tomorrow = LocalDate.now().plusDays(1);
@@ -61,14 +61,14 @@ class AppServiceCheckinWindowTest {
                 "待使用", LocalDateTime.now(), LocalDateTime.now());
 
         var user = new com.scau.campusstudyroomreservationmanagementsystem.support.CurrentUser(
-                userId, "202301010101", "STUDENT", "张三");
+                userId, "202225220101", "STUDENT", "陈思源");
         BusinessException ex = assertThrows(BusinessException.class, () -> appService.qrCode(user));
         assertTrue(ex.getMessage().contains("不在签到时间内"));
     }
 
     @Test
     void scheduledProcessInvalidCheckinRevertsOutsideWindowSignIn() {
-        Long userId = jdbc.queryForObject("select id from user_account where username='202301010101'", Long.class);
+        Long userId = jdbc.queryForObject("select id from user_account where username='202225220101'", Long.class);
         Long seatId = jdbc.queryForObject("select id from seat limit 1", Long.class);
         Long roomId = jdbc.queryForObject("select room_id from seat where id=?", Long.class, seatId);
         LocalDate today = LocalDate.now();

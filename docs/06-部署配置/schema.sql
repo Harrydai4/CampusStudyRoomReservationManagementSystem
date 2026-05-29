@@ -16,6 +16,7 @@
 /*!40111 SET @OLD_SQL_NOTES=@@SQL_NOTES, SQL_NOTES=0 */;
 
 DROP VIEW IF EXISTS `v_room_daily_usage`;
+DROP TABLE IF EXISTS `temp_leave`;
 DROP TABLE IF EXISTS `study_room_facility`;
 DROP TABLE IF EXISTS `feedback_ticket`;
 DROP TABLE IF EXISTS `notification_message`;

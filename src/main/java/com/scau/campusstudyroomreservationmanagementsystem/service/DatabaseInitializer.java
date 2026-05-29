@@ -571,7 +571,7 @@ public class DatabaseInitializer implements CommandLineRunner {
 
     /**
      * 将内置演示账号恢复为文档约定密码与可登录状态（不删除业务数据）。
-     * 学号 202301010101/102 → 123456；admin → admin123；superadmin → super123。
+     * 学号 202225220101/202325220201 → 123456；admin → admin123；superadmin → super123。
      */
     private void syncDemoAccounts() {
         LocalDateTime now = LocalDateTime.now();
@@ -579,7 +579,7 @@ public class DatabaseInitializer implements CommandLineRunner {
         String adminPassword = passwordEncoder.encode("admin123");
         String superPassword = passwordEncoder.encode("super123");
 
-        for (String studentNo : List.of("202301010101", "202301010102")) {
+        for (String studentNo : List.of("202225220101", "202325220201")) {
             jdbc.update("""
                     update user_account set password_hash=?, status='正常', updated_at=?
                     where username=? and role='学生'
@@ -591,11 +591,11 @@ public class DatabaseInitializer implements CommandLineRunner {
         }
         jdbc.update("""
                 update user_account set password_hash=?, status='待审核', updated_at=?
-                where username='202301010199' and role='学生'
+                where username='202425220301' and role='学生'
                 """, studentPassword, now);
 
         Long demoStudentId = jdbc.queryForObject(
-                "select id from user_account where username='202301010101' and role='学生'", Long.class);
+                "select id from user_account where username='202225220101' and role='学生'", Long.class);
         if (demoStudentId != null) {
             jdbc.update("update student_profile set credit_score=280, updated_at=? where user_id=?", now, demoStudentId);
             jdbc.update("""
@@ -625,17 +625,17 @@ public class DatabaseInitializer implements CommandLineRunner {
         String superPassword = passwordEncoder.encode("super123");
 
         jdbc.update("insert into user_account(username,password_hash,role,status,created_at,updated_at) values(?,?,?,?,?,?)",
-                "202301010101", studentPassword, "学生", "正常", now, now);
+                "202225220101", studentPassword, "学生", "正常", now, now);
         jdbc.update("insert into user_account(username,password_hash,role,status,created_at,updated_at) values(?,?,?,?,?,?)",
-                "202301010102", studentPassword, "学生", "正常", now, now);
+                "202325220201", studentPassword, "学生", "正常", now, now);
         jdbc.update("insert into user_account(username,password_hash,role,status,created_at,updated_at) values(?,?,?,?,?,?)",
-                "202301010199", studentPassword, "学生", "待审核", now, now);
-        Long s1 = jdbc.queryForObject("select id from user_account where username='202301010101'", Long.class);
-        Long s2 = jdbc.queryForObject("select id from user_account where username='202301010102'", Long.class);
-        Long s3 = jdbc.queryForObject("select id from user_account where username='202301010199'", Long.class);
-        insertProfile(s1, "202301010101", "张三", "已通过", 280);
-        insertProfile(s2, "202301010102", "李四", "已通过", 320);
-        insertProfile(s3, "202301010199", "王五", "待审核", 300);
+                "202425220301", studentPassword, "学生", "待审核", now, now);
+        Long s1 = jdbc.queryForObject("select id from user_account where username='202225220101'", Long.class);
+        Long s2 = jdbc.queryForObject("select id from user_account where username='202325220201'", Long.class);
+        Long s3 = jdbc.queryForObject("select id from user_account where username='202425220301'", Long.class);
+        insertProfile(s1, "202225220101", "陈思源", "已通过", 280);
+        insertProfile(s2, "202325220201", "李四", "已通过", 320);
+        insertProfile(s3, "202425220301", "王五", "待审核", 300);
 
         jdbc.update("insert into admin_account(account,password_hash,name,role,phone,status,created_at,updated_at) values(?,?,?,?,?,?,?,?)",
                 "admin", adminPassword, "张老师", "普通管理员", "13800138000", "正常", now, now);

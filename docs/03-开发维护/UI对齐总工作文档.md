@@ -1,4 +1,4 @@
-# UI 对齐总工作文档（原型 → 实现 → 验收）
+﻿# UI 对齐总工作文档（原型 → 实现 → 验收）
 
 > **版本**：V1.1 · **最后更新**：2026-05-25  
 > **对照源（唯一 UI 真源）**：`CampusStudyRoomReservationManagementSystem-master/原型设计.html`（副本：`docs/07-原型资源/原型设计.html`）  
@@ -198,7 +198,7 @@ cd D:\SchoolWorkPlace\Database\CSRRMupdate
 
 浏览器 **Ctrl+F5** 打开 [http://localhost:8080；若无登录页：`localStorage.clear()](http://localhost:8080；若无登录页：`localStorage.clear()); location.reload()`
 
-### 6.2 学生端（202301010101 / 123456）
+### 6.2 学生端（202225220101 / 123456）
 
 1. 登录 → 首页（公告、今日预约、推荐、小贴士）
 2. 推荐自习室 → 预约页 → 快捷时段 → 选座 → 确认弹窗 → 成功 → 签到页

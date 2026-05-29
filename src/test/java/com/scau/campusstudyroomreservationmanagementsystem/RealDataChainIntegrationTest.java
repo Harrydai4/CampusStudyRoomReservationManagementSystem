@@ -34,8 +34,8 @@ class RealDataChainIntegrationTest {
         Long roomId = jdbc.queryForObject("select id from study_room where room_code='LIB01A'", Long.class);
         Long seatId = jdbc.queryForObject(
                 "select id from seat where room_id=? and is_seat=1 and status='空闲' limit 1", Long.class, roomId);
-        Long userId = jdbc.queryForObject("select user_id from student_profile where student_no='202301010101'", Long.class);
-        CurrentUser student = new CurrentUser(userId, "202301010101", "STUDENT", "张三");
+        Long userId = jdbc.queryForObject("select user_id from student_profile where student_no='202225220101'", Long.class);
+        CurrentUser student = new CurrentUser(userId, "202225220101", "STUDENT", "陈思源");
 
         int scoreBefore = jdbc.queryForObject("select credit_score from student_profile where user_id=?", Integer.class, userId);
         LocalDate date = LocalDate.now().plusDays(2);

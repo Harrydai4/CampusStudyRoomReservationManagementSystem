@@ -1,4 +1,4 @@
-# 06 — GitHub 傻瓜式提交全流程（组员 → 组长审核）
+﻿# 06 — GitHub 傻瓜式提交全流程（组员 → 组长审核）
 
 > **适用场景**：课程共同仓库（如 `CZF312/CampusStudyRoomReservationManagementSystem`），你是组员，要把 **CSRRMupdate V1.1** 交给组长审核，**不覆盖** 原版 `master`。  
 > **你的账号示例**：`Harrydai4` · **分支示例**：`v1.1-harrydai4` · **PR 示例**：`#1`
@@ -183,7 +183,7 @@ https://github.com/CZF312/CampusStudyRoomReservationManagementSystem/pull/1
 https://github.com/Harrydai4/CampusStudyRoomReservationManagementSystem/tree/v1.1-harrydai4
 
 说明：未直接改 master；PR 无冲突。clone 后配置 application-local.properties，mvnw spring-boot:run → 8080。
-学生 202301010101/123456，管理员 admin/admin123。
+学生 202225220101/123456，管理员 admin/admin123。
 ```
 
 **PR 链接** = 浏览器打开 PR 页面时地址栏的 URL。

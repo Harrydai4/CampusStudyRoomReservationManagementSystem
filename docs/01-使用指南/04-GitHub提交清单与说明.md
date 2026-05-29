@@ -1,4 +1,4 @@
-# 04 — GitHub 提交清单与说明
+﻿# 04 — GitHub 提交清单与说明
 
 > **组员完整流程（Fork → 分支 → PR → 发组长）** → **[06-GitHub傻瓜式提交全流程.md](06-GitHub傻瓜式提交全流程.md)**  
 > **只提交这个文件夹**：`D:\SchoolWorkPlace\Database\CSRRMupdate`  
@@ -222,7 +222,7 @@ notepad "src\main\resources\application-local.properties"
 .\mvnw.cmd spring-boot:run
 ```
 
-浏览器 **[http://localhost:8080](http://localhost:8080)**，用学生账号 `202301010101` / `123456` 登录。  
+浏览器 **[http://localhost:8080](http://localhost:8080)**，用学生账号 `202225220101` / `123456` 登录。  
 能登录 = 提交合格。
 
 ---

@@ -93,7 +93,7 @@ try {
     Invoke-SqlFile -Path $schemaSql -DatabaseName "study_room_reservation"
     Invoke-SqlFile -Path $dataSql -DatabaseName "study_room_reservation"
     Write-Host "OK: init + schema + data imported" -ForegroundColor Green
-    Write-Host "Demo login: student 202301010101 / 123456 , admin admin / admin123" -ForegroundColor Yellow
+    Write-Host "Demo login: student 202225220101 / 123456 , admin admin / admin123" -ForegroundColor Yellow
 } finally {
     Remove-Item Env:MYSQL_PWD -ErrorAction SilentlyContinue
 }
